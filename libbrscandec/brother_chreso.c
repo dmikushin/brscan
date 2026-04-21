@@ -991,7 +991,7 @@ ulong FUN_001036ef(float param_1,undefined *param_2)
   undefined *local_18;
   
   fVar5 = (float)DAT_00208970 / (float)DAT_00208974;
-  uVar4 = SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_00208968) >> 0x40,0);
+  uVar4 = TWO_THIRDS(DAT_00208968);
   uVar2 = uVar4 >> 1;
   uVar4 = uVar4 & 0xfffffffffffffffe;
   iVar1 = (int)(DAT_00208948 / (ulong)(long)DAT_00208974);
@@ -1193,7 +1193,7 @@ ulong FUN_00103f01(float param_1,undefined *param_2)
   fVar3 = (float)DAT_00208970 / (float)DAT_00208974;
   fVar4 = (float)DAT_00208978;
   fVar2 = (float)DAT_0020897c;
-  uVar1 = SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_00208968) >> 0x40,0);
+  uVar1 = TWO_THIRDS(DAT_00208968);
   local_24 = 0.00000000;
   local_2c = fVar3 + 0.00000000;
   local_20 = 0;
@@ -1256,7 +1256,7 @@ ulong FUN_00104153(byte *param_1,undefined8 param_2,undefined *param_3)
   local_28 = 0;
   local_20 = param_3;
   local_10 = param_1;
-  while (local_28 < SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_00208968) >> 0x41,0)) {
+  while (local_28 < DIV3(DAT_00208968)) {
     *local_20 = (&DAT_002087a0)[*local_10];
     local_20[1] = (&DAT_002086a0)[*local_10];
     local_20[2] = (&DAT_002085a0)[*local_10];
@@ -1264,7 +1264,7 @@ ulong FUN_00104153(byte *param_1,undefined8 param_2,undefined *param_3)
     local_28 = local_28 + 1;
     local_10 = local_10 + 1;
   }
-  uVar3 = SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_00208968) >> 0x40,0);
+  uVar3 = TWO_THIRDS(DAT_00208968);
   uVar3 = (uVar3 & 0xfffffffffffffffe) + (uVar3 >> 1);
   uVar2 = DAT_00208968 - uVar3;
   if (DAT_00208968 != uVar3) {
@@ -1468,7 +1468,7 @@ ulong FUN_00104a67(void *param_1,int param_2,void *param_3)
   ulong uVar2;
   ulong local_28;
   
-  uVar2 = SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_00208960) >> 0x41,0);
+  uVar2 = DIV3(DAT_00208960);
   if (param_2 == 3) {
     _DAT_002088e0 = _DAT_002088e0 + 1;
     local_28 = 0;
@@ -1529,7 +1529,7 @@ ulong FUN_00104c9e(void *param_1,int param_2,void *param_3)
   ulong uVar2;
   ulong local_28;
   
-  uVar2 = SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_00208960) >> 0x41,0);
+  uVar2 = DIV3(DAT_00208960);
   if (param_2 == 3) {
     _DAT_002088e0 = _DAT_002088e0 + 1;
     local_28 = 0;
@@ -1593,7 +1593,7 @@ ulong FUN_00104ed0(void *param_1,int param_2,void *param_3)
   ulong uVar2;
   ulong local_28;
   
-  uVar2 = SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_00208960) >> 0x40,0);
+  uVar2 = TWO_THIRDS(DAT_00208960);
   __n = uVar2 >> 1;
   if (param_2 == 3) {
     _DAT_002088e0 = _DAT_002088e0 + 1;
@@ -1669,8 +1669,8 @@ void FUN_00105173(ulong param_1,int param_2,undefined *param_3,undefined *param_
   ulong local_10;
   
   local_10 = param_1;
-  if (SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_002088d0) >> 0x41,0) <= param_1) {
-    local_10 = SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_002088d0) >> 0x41,0) - 1;
+  if (DIV3(DAT_002088d0) <= param_1) {
+    local_10 = DIV3(DAT_002088d0) - 1;
   }
   local_34 = param_2 + DAT_002088dc;
   if (DAT_002088d8 <= local_34) {
@@ -1679,10 +1679,10 @@ void FUN_00105173(ulong param_1,int param_2,undefined *param_3,undefined *param_
   lVar1 = *(long *)(&DAT_002088e8 + (long)local_34 * 8);
   *param_3 = *(undefined *)(local_10 + lVar1);
   *param_4 = *(undefined *)
-              (SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_002088d0) >> 0x41,0) + lVar1 +
+              (DIV3(DAT_002088d0) + lVar1 +
               local_10);
   *param_5 = *(undefined *)
-              (SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_002088d0 * 2) >> 0x41,0) + lVar1 +
+              (DIV3(DAT_002088d0 * 2) + lVar1 +
               local_10);
   return;
 }
@@ -1818,7 +1818,7 @@ ulong FUN_00105879(float param_1,float param_2,float param_3,float param_4,undef
   ulong uVar1;
   float fVar2;
   float fVar3;
-  __int128 auVar4;
+  /* __int128 auVar4 removed — movlpd pattern replaced with (val + 0.5) */
   float local_50;
   float local_4c;
   float local_40;
@@ -1878,7 +1878,7 @@ ulong FUN_00105aa6(float param_1,float param_2,float param_3,float param_4,undef
   ulong uVar1;
   float fVar2;
   float fVar3;
-  __int128 auVar4;
+  /* __int128 auVar4 removed — movlpd pattern replaced with (val + 0.5) */
   float local_50;
   float local_4c;
   float local_40;
@@ -1937,7 +1937,7 @@ ulong FUN_00105cd3(float param_1,float param_2,float param_3,float param_4,undef
                   undefined *param_6,undefined *param_7)
 {
   double dVar1;
-  __int128 auVar2;
+  /* __int128 auVar2 removed — movlpd pattern replaced with (val + 0.5) */
   byte local_6f;
   byte local_6e;
   byte local_6d;
@@ -2036,7 +2036,7 @@ ulong FUN_00104754(void *param_1,int param_2)
   ulong local_20;
   
   local_34 = 0;
-  uVar2 = SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_002088d0) >> 0x40,0);
+  uVar2 = TWO_THIRDS(DAT_002088d0);
   __n = uVar2 >> 1;
   if (param_1 == (void *)0x0) {
     local_30 = DAT_002088dc + -1;
@@ -2119,8 +2119,8 @@ void FUN_00105279(ulong param_1,int param_2,float *param_3,float *param_4,float 
   ulong local_10;
   
   local_10 = param_1;
-  if (SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_002088d0) >> 0x41,0) <= param_1) {
-    local_10 = SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_002088d0) >> 0x41,0) - 1;
+  if (DIV3(DAT_002088d0) <= param_1) {
+    local_10 = DIV3(DAT_002088d0) - 1;
   }
   local_34 = param_2 + DAT_002088dc;
   if (DAT_002088d8 <= local_34) {
@@ -2128,11 +2128,9 @@ void FUN_00105279(ulong param_1,int param_2,float *param_3,float *param_4,float 
   }
   lVar1 = *(long *)(&DAT_002088e8 + (long)local_34 * 8);
   *param_3 = (float)(int)(short)(ushort)*(byte *)(local_10 + lVar1);
-  *param_4 = (float)(int)(short)(ushort)*(byte *)(SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) *
-                                                         ZEXT816(DAT_002088d0) >> 0x41,0) + lVar1 +
+  *param_4 = (float)(int)(short)(ushort)*(byte *)(DIV3(DAT_002088d0) + lVar1 +
                                                  local_10);
-  *param_5 = (float)(int)(short)(ushort)*(byte *)(SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) *
-                                                         ZEXT816(DAT_002088d0 * 2) >> 0x41,0) +
+  *param_5 = (float)(int)(short)(ushort)*(byte *)(DIV3(DAT_002088d0 * 2) +
                                                   lVar1 + local_10);
   return;
 }
@@ -2222,7 +2220,7 @@ ulong ChangeResoInit(undefined8 *param_1)
       DAT_00208960 = local_10[3] * 3;
       DAT_00208968 = ((long)DAT_00208974 * DAT_00208960) / (ulong)(long)DAT_00208970;
       local_10[6] = DAT_00208968;
-      local_10[5] = SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_00208968) >> 0x41,0);
+      local_10[5] = DIV3(DAT_00208968);
     }
   }
   else {
@@ -2243,12 +2241,11 @@ ulong ChangeResoInit(undefined8 *param_1)
       }
     }
     else {
-      DAT_00208968 = SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) *
-                            ZEXT816((ulong)((long)DAT_00208974 * local_10[3] * 3) /
-                                    (ulong)(long)DAT_00208970) >> 0x43,0) * 0xc;
+      DAT_00208968 = ((ulong)((long)DAT_00208974 * local_10[3] * 3) /
+                      (ulong)(long)DAT_00208970) / 12 * 12;
       DAT_00208960 = ((long)DAT_00208970 * DAT_00208968) / (ulong)(long)DAT_00208974;
       local_10[6] = DAT_00208968;
-      local_10[5] = SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_00208968) >> 0x41,0);
+      local_10[5] = DIV3(DAT_00208968);
     }
   }
   WRITE64(0x00208920, *local_10);

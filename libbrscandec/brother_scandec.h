@@ -82,37 +82,15 @@ typedef uint32_t undefined4;
 typedef uint64_t undefined8;
 
 /*
- * Ghidra decompiler helper functions.
- * These represent x86-64 operations that Ghidra couldn't simplify:
+ * Ghidra decompiler helper macros (portable, no __int128 needed).
  *
- * The pattern SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(x) >> 0x41, 0)
- * is the compiler's idiom for unsigned division by 3.
- *
- * The movlpd/ZEXT416/CONCAT88 patterns implement rounding (value + 0.5).
+ * The pattern SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(x) >> shift, 0)
+ * is the compiler's idiom for unsigned division by 3:
+ *   >> 0x41 (65): x / 3
+ *   >> 0x40 (64): x * 2 / 3
+ *   >> 0x43 (67): x / 12
  */
-static inline __int128 ZEXT816(int64_t val) {
-	return (__int128)(uint64_t)val;
-}
-
-static inline __int128 ZEXT416(int32_t val) {
-	return (__int128)(uint32_t)val;
-}
-
-static inline int64_t SUB168(__int128 val, int64_t offset) {
-	/* Extract low 64 bits (offset is always 0 in this codebase) */
-	(void)offset;
-	return (int64_t)val;
-}
-
-static inline __int128 CONCAT88(int64_t hi, int64_t lo) {
-	return ((__int128)(uint64_t)hi << 64) | (uint64_t)lo;
-}
-
-static inline __int128 movlpd(__int128 val, double d) {
-	/* MOVLPD: replace low 64 bits of XMM reg with a double */
-	union { double d; uint64_t i; } u;
-	u.d = d;
-	return (val & (((__int128)0xFFFFFFFFFFFFFFFFULL) << 64)) | u.i;
-}
+#define DIV3(x)        ((uint64_t)(x) / 3)
+#define TWO_THIRDS(x)  ((uint64_t)(x) * 2 / 3)
 
 #endif	/* ! __BROTHER_SCAN_DECODE_H */
