@@ -18,65 +18,50 @@ byte* (*DAT_00208f20)(SCANDEC_WRITE *param_1,size_t *param_2);
 
 BOOL ScanDecOpen(SCANDEC_OPEN *param_1)
 {
-  ulong uVar1;
-  uint local_5c;
-  undefined4 local_58;
-  undefined4 local_54;
-  undefined4 local_50;
-  undefined4 local_4c;
-  undefined4 local_48;
-  undefined8 local_40;
-  undefined4 local_38;
-  undefined4 local_34;
-  undefined8 local_30;
-  undefined8 local_28;
-  undefined8 local_20;
-  undefined4 *local_10;
-
-  if ((param_1->nColorType >> 8 & 1) == 0) {
-    if ((param_1->nColorType >> 9 & 1) == 0) {
-      malloc_size = param_1->nOutDataKind * 3;
-    }
-    else {
-      malloc_size = param_1->nOutDataKind;
-    }
+  /*
+   * Compute buffer size from dwInLinePixCnt and color type.
+   * Verified against disassembly: reads offset 0x18 (dwInLinePixCnt),
+   * NOT nOutDataKind as Ghidra incorrectly decompiled.
+   */
+  if ((param_1->nColorType >> 8 & 1) != 0) {
+    /* 8-bit single channel */
+    malloc_size = param_1->dwInLinePixCnt;
+  }
+  else if ((param_1->nColorType >> 9 & 1) != 0) {
+    /* 8-bit single channel (gray) */
+    malloc_size = param_1->dwInLinePixCnt;
   }
   else {
-    malloc_size = param_1->nOutDataKind;
+    /* 3 bytes per pixel (RGB) */
+    malloc_size = param_1->dwInLinePixCnt * 3;
   }
-  local_10 = (undefined4 *)param_1;
+
   bugchk = bugchk_malloc(malloc_size, __FILE__, __LINE__);
   if (bugchk == 0x0) {
-    local_5c = 0;
+    return 0;
   }
-  else {
-    local_58 = *local_10;
-    local_54 = local_10[1];
-    local_50 = local_10[2];
-    local_4c = local_10[3];
-    local_48 = local_10[4];
-    local_40 = *(undefined8 *)(local_10 + 6);
-    local_38 = local_10[8];
-    local_34 = local_10[9];
-    uVar1 = ChangeResoInit((undefined8 *)&local_58);
-    if ((int)uVar1 == 0) {
-      bugchk_free(bugchk, __FILE__, __LINE__);
-      bugchk = (undefined8 *)0x0;
-      local_5c = 0;
-    }
-    else {
-      *(undefined8 *)(local_10 + 10) = local_30;
-      *(undefined8 *)(local_10 + 0xc) = local_28;
-      *(undefined8 *)(local_10 + 0xe) = local_20;
-      DAT_00208f00 = 0;
-      DAT_00208f08 = 0;
-      DAT_00208f10 = 0;
-      DAT_00208f18 = 0;
-      DAT_00208f20 = FUN_001063f3;
-      local_5c = 1;
-    }
+
+  /* Copy input struct to local, call ChangeResoInit, copy outputs back.
+   * ChangeResoInit fills dwOutLinePixCnt, dwOutLineByte, dwOutWriteMaxSize. */
+  SCANDEC_OPEN localCopy = *param_1;
+  ulong uVar1 = ChangeResoInit((undefined8 *)&localCopy);
+
+  if ((int)uVar1 == 0) {
+    bugchk_free(bugchk, __FILE__, __LINE__);
+    bugchk = (undefined8 *)0x0;
+    return 0;
   }
-  return (ulong)local_5c;
+
+  param_1->dwOutLinePixCnt  = localCopy.dwOutLinePixCnt;
+  param_1->dwOutLineByte    = localCopy.dwOutLineByte;
+  param_1->dwOutWriteMaxSize = localCopy.dwOutWriteMaxSize;
+
+  DAT_00208f00 = 0;
+  DAT_00208f08 = 0;
+  DAT_00208f10 = 0;
+  DAT_00208f18 = 0;
+  DAT_00208f20 = FUN_001063f3;
+  return 1;
 }
 
 BOOL ScanDecClose(void)
@@ -91,33 +76,39 @@ BOOL ScanDecClose(void)
 
 DWORD ScanDecPageEnd(SCANDEC_WRITE *param_1, INT *param_2)
 {
-  long lVar1;
-  undefined4 local_58 [2];
-  undefined8 local_50;
-  undefined8 local_48;
-  undefined8 local_40;
-  undefined8 local_38;
-  undefined4 local_30;
-  undefined4 *local_18;
-  long local_10;
+  /*
+   * Build a ChangeReso struct on the stack with zeroed data fields
+   * (PageEnd flushes remaining buffered lines, no new input).
+   * Verified against disassembly at 0x6309-0x63aa.
+   */
+  struct {
+    int     field_00;       /* +0x00: from param_1->nInDataKind */
+    int     _pad;           /* +0x04 */
+    void   *dataPtr;        /* +0x08: NULL for PageEnd */
+    unsigned long dataSize; /* +0x10: 0 for PageEnd */
+    void   *writeBuff;      /* +0x18: param_1->pWriteBuff */
+    unsigned long writeSize;/* +0x20: param_1->dwWriteBuffSize */
+    int     reverWrite;     /* +0x28: param_1->bReverWrite */
+  } resoIn;
 
-  local_58[0] = param_1->dwLineDataSize;
-  local_50 = 0;
-  local_48 = 0;
-  local_40 = *(undefined8 *)(param_1 + 0x18);
-  local_38 = *(undefined8 *)(param_1 + 0x20);
-  local_30 = *(undefined4 *)(param_1 + 0x28);
+  resoIn.field_00  = param_1->nInDataKind;
+  resoIn._pad      = 0;
+  resoIn.dataPtr   = 0;
+  resoIn.dataSize  = 0;
+  resoIn.writeBuff = param_1->pWriteBuff;
+  resoIn.writeSize = param_1->dwWriteBuffSize;
+  resoIn.reverWrite = param_1->bReverWrite;
+
   *param_2 = 0;
-  local_18 = param_2;
-  local_10 = (long)param_1;
-  lVar1 = ChangeResoWriteEnd(local_58,param_2);
+  long lVar1 = ChangeResoWriteEnd((undefined8)(uintptr_t)&resoIn, (undefined4 *)param_2);
+
+  DAT_00208ef0 = 0;
   if (DAT_00208f08 != 0) {
     DAT_00208f08 = 0;
   }
   if (DAT_00208f18 != 0) {
     DAT_00208f18 = 0;
   }
-  DAT_00208ef0 = 0;
   return lVar1;
 }
 
@@ -159,30 +150,36 @@ void ScanDecSetTblHandle(HANDLE param_1, HANDLE param_2)
   return;
 }
 
-DWORD ScanDecWrite(SCANDEC_WRITE *param_1, INT * param_2)
+DWORD ScanDecWrite(SCANDEC_WRITE *param_1, INT *param_2)
 {
-  undefined8 uVar1;
-  undefined4 local_58 [2];
-  byte *local_50;
-  undefined8 local_48;
-  undefined8 local_40;
-  undefined8 local_38;
-  undefined4 local_30;
-  undefined8 local_28 [2];
-  undefined4 *local_18;
-  long local_10;
-  
-  local_18 = param_2;
-  local_10 = (long)param_1;
-  local_50 = (*DAT_00208f20)(param_1,local_28);
-  local_58[0] = *(undefined4 *)(local_10 + 4);
-  local_48 = local_28[0];
-  local_40 = *(undefined8 *)(local_10 + 0x18);
-  local_38 = *(undefined8 *)(local_10 + 0x20);
-  local_30 = *(undefined4 *)(local_10 + 0x28);
-  *local_18 = 0;
-  uVar1 = ChangeResoWrite(local_58,local_18);
-  return uVar1;
+  /*
+   * Call decode function pointer, then pass result to ChangeResoWrite.
+   * Verified against disassembly at 0x6287-0x6308.
+   * Key fix: the local struct starts at rbp-0x50, NOT rbp-0x58 as Ghidra claimed.
+   */
+  size_t decodedSize;
+  byte *decodedData = (*DAT_00208f20)(param_1, &decodedSize);
+
+  struct {
+    int     field_00;       /* +0x00: param_1->nInDataKind */
+    int     _pad;           /* +0x04 */
+    void   *dataPtr;        /* +0x08: decoded data pointer */
+    unsigned long dataSize; /* +0x10: decoded data size */
+    void   *writeBuff;      /* +0x18: param_1->pWriteBuff */
+    unsigned long writeSize;/* +0x20: param_1->dwWriteBuffSize */
+    int     reverWrite;     /* +0x28: param_1->bReverWrite */
+  } resoIn;
+
+  resoIn.field_00   = param_1->nInDataKind;
+  resoIn._pad       = 0;
+  resoIn.dataPtr    = decodedData;
+  resoIn.dataSize   = decodedSize;
+  resoIn.writeBuff  = param_1->pWriteBuff;
+  resoIn.writeSize  = param_1->dwWriteBuffSize;
+  resoIn.reverWrite = param_1->bReverWrite;
+
+  *param_2 = 0;
+  return ChangeResoWrite((undefined8)(uintptr_t)&resoIn, (undefined4 *)param_2);
 }
 
 byte * FUN_001063f3(SCANDEC_WRITE *param_1,size_t *param_2)

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.5)
 
 project(brscan)
 
@@ -12,6 +12,17 @@ add_library(brscandec SHARED
 	libbrscandec/brother_scandec.c
 	libbrscandec/brother_chreso.c)
 set_target_properties(brscandec PROPERTIES SOVERSION 1)
+# Ghidra decompilation uses undefined8/undefined4 generics that mismatch
+# pointer vs integer types. These are semantically correct on LP64
+# (pointers and uint64_t are both 8 bytes). GCC 14+ treats these as errors.
+target_compile_options(brscandec PRIVATE
+	-Wno-incompatible-pointer-types
+	-Wno-int-conversion
+	-Wno-pointer-sign)
+
+add_library(brcolm SHARED
+	libbrcolm/brcolm.c)
+set_target_properties(brcolm PROPERTIES SOVERSION 1)
 
 add_library(sane-brother SHARED
 	libsane-brother/brother.c
@@ -47,7 +58,7 @@ target_include_directories(brsaneconfig PRIVATE
 target_compile_definitions(brsaneconfig PRIVATE BRSANESUFFIX)
 target_link_libraries(brsaneconfig sane-brother)
 
-install(TARGETS brsaneconfig brscandec)
+install(TARGETS brsaneconfig brscandec brcolm)
 install(TARGETS sane-brother LIBRARY DESTINATION /usr/lib/sane)
 
 install(FILES libbrcolm/GrayCmData/BHminiFB/brmfgray.bin DESTINATION /usr/share/sane/brother/GrayCmData/BHminiFB)
@@ -62,12 +73,6 @@ install(FILES libbrcolm/GrayCmData/YL4FB/brlutcm.dat libbrcolm/GrayCmData/YL4FB/
 install(FILES libbrcolm/GrayCmData/BHL/brmfgray.bin DESTINATION /usr/share/sane/brother/GrayCmData/BHL)
 install(FILES libbrcolm/GrayCmData/BHMFB/brmfgray.bin DESTINATION /usr/share/sane/brother/GrayCmData/BHMFB)
 install(FILES libbrcolm/GrayCmData/ZLeFB/brlutcm.dat libbrcolm/GrayCmData/ZLeFB/brmfgray.bin DESTINATION /usr/share/sane/brother/GrayCmData/ZLeFB)
-
-# /usr/bin/install -c -D -t /usr/lib libbrcolm.so.1.0.1 && \
-# cd /usr/lib && \
-# ln -s -f libbrcolm.so.1.0.1 libbrcolm.so.1
-# /usr/bin/mkdir -p '/usr/libexec/brscan'
-# /usr/bin/install -c data/setupSaneScan '/usr/libexec/brscan'
 
 install(FILES data/brsanenetdevice.cfg data/Brsane.ini DESTINATION /usr/share/sane/brother)
 

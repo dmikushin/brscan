@@ -1,6 +1,6 @@
 This repository contains Brother scanner backends for `libsane`, which are also tested to work on Raspberry Pi. The source code originates from the Brother [download page](http://www.brother.com/cgi-bin/agreement/agreement.cgi?dlfile=http://www.brother.com/pub/bsc/linux/dlf/brscan3-src-0.2.11-5.tar.gz&lang=English_source) and has been significantly cleaned.
 
-As Brother does not ship ARM binaries, they could be compiled using the instructions below. The resulting `/usr/lib/sane/libsane-brother.so` has been tested on NanoPi Neo2, and should work on other boards, such as Raspberry Pi. **The required `libbrscandec.so.1.0.0` is currently missing for non-x86_64 platforms, and is currently being worked on.**
+The original Brother distribution shipped two proprietary x86-64 binary blobs (`libbrscandec.so` and `libbrcolm.so`) with no source code. Both have been fully reverse-engineered and replaced with open-source C implementations, enabling compilation for any architecture (ARM, RISC-V, etc.).
 
 ## Prerequisites
 

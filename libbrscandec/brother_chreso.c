@@ -3,67 +3,108 @@
 
 #include <string.h>
 
-/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+/*
+ * The Ghidra decompilation uses address arithmetic like &DAT_002088e8 + i*8
+ * to index into arrays. In C, pointer arithmetic scales by sizeof(*ptr),
+ * which breaks when the variable is declared as a scalar (uint64_t, etc.).
+ *
+ * Fix: allocate one contiguous buffer matching the original blob's BSS layout.
+ * Each DAT_ symbol becomes a macro that dereferences into this buffer.
+ * "Array base" variables are char-typed so &var + N gives byte offset N.
+ * "Scalar" variables are typed via cast so assignments work correctly.
+ * "Overlapping" _DAT_ / DAT_ pairs share the same buffer location.
+ */
+static char _bss[0x0D00] __attribute__((aligned(16)));
 
-uint64_t DAT_002082a0;
-uint64_t DAT_002083a0;
-uint64_t DAT_002085a0;
-uint64_t DAT_002086a0;
-uint64_t DAT_002087a0;
-void* _DAT_002088c8;
-uint64_t _DAT_002088e0;
-uint64_t _DAT_00208920;
-uint32_t _DAT_00208928;
-uint32_t _DAT_0020892c;
-uint64_t _DAT_00208930;
-uint64_t _DAT_00208938;
-uint64_t _DAT_00208940;
-uint64_t _DAT_00208950;
-uint64_t _DAT_00208958;
-uint32_t _DAT_00208984;
-void* DAT_002088c0;
-uint64_t DAT_002088c8;
-uint64_t DAT_002088d0;
-uint32_t DAT_002088d8;
-uint32_t DAT_002088dc;
-uint64_t DAT_002088e0;
-long DAT_002088e8;
-uint32_t DAT_00208920;
-uint32_t DAT_00208924;
-uint32_t DAT_00208928;
-uint32_t DAT_0020892c;
-uint64_t DAT_00208930;
-uint64_t DAT_00208938;
-uint64_t DAT_00208940;
-uint64_t DAT_00208948;
-uint64_t DAT_00208950;
-uint64_t DAT_00208958;
-uint64_t DAT_00208960;
-uint64_t DAT_00208968;
-uint32_t DAT_00208970;
-uint32_t DAT_00208974;
-uint32_t DAT_00208978;
-uint32_t DAT_0020897c;
-uint32_t DAT_00208980;
-uint32_t DAT_00208984;
-uint64_t DAT_00208988;
-uint32_t DAT_002089c0;
-uint32_t DAT_002089c4;
-uint32_t DAT_002089c8;
-uint32_t DAT_002089cc;
-uint64_t DAT_002089d0;
-uint64_t DAT_00208c40;
-uint32_t DAT_00208c60;
-uint32_t DAT_00208c64;
-uint32_t DAT_00208c68;
-uint32_t DAT_00208c6c;
-uint32_t DAT_00208c70;
-uint64_t DAT_00208ee0;
+#define BSS(off) (_bss + (off))
+/* Scalars: *(type*)(base + offset) — lvalue of the given type */
+#define S64(off) (*(uint64_t*)BSS(off))
+#define S32(off) (*(uint32_t*)BSS(off))
+#define SPTR(off) (*(void**)BSS(off))
+/* Array bases: single char so &name gives char* for byte arithmetic */
+#define ABYTE(off) (*BSS(off))
 
-long (*DAT_00208990)(undefined8 param_1,undefined4 *param_2);
-ulong (*DAT_00208998)(byte *param_1,undefined8 param_2,undefined *param_3);
-ulong (*DAT_002089a0)(byte *param_1,undefined8 param_2,void *param_3,int param_4);
-undefined8 (*DAT_002089a8)(float param_1,undefined *param_2);
+/* Base address in Ghidra space: 0x002082a0 */
+#define O(addr) ((addr) - 0x002082a0u)
+
+/* 256-byte lookup tables (used as (&DAT_xxx)[index]) */
+#define DAT_002082a0 ABYTE(O(0x002082a0))
+#define DAT_002083a0 ABYTE(O(0x002083a0))
+#define DAT_002085a0 ABYTE(O(0x002085a0))
+#define DAT_002086a0 ABYTE(O(0x002086a0))
+#define DAT_002087a0 ABYTE(O(0x002087a0))
+
+/* Resolution change circular buffer state */
+#define DAT_002088c0  SPTR(O(0x002088c0))
+#define _DAT_002088c8 SPTR(O(0x002088c8))  /* overlaps DAT_002088c8 */
+#define DAT_002088c8  S64(O(0x002088c8))
+#define DAT_002088d0  S64(O(0x002088d0))
+#define DAT_002088d8  S32(O(0x002088d8))
+#define DAT_002088dc  S32(O(0x002088dc))
+#define _DAT_002088e0 S64(O(0x002088e0))   /* counter, overlaps array base */
+#define DAT_002088e0  ABYTE(O(0x002088e0)) /* array base for pointer table */
+#define DAT_002088e8  ABYTE(O(0x002088e8)) /* array base for pointer table */
+
+/* ChangeResoInit parameters (copied from SCANDEC_OPEN) */
+#define _DAT_00208920 S64(O(0x00208920))   /* overlaps DAT_00208920 */
+#define DAT_00208920  S32(O(0x00208920))
+#define DAT_00208924  S32(O(0x00208924))
+#define _DAT_00208928 S32(O(0x00208928))   /* overlaps DAT_00208928 */
+#define DAT_00208928  S32(O(0x00208928))
+#define _DAT_0020892c S32(O(0x0020892c))
+#define DAT_0020892c  S32(O(0x0020892c))
+#define _DAT_00208930 S64(O(0x00208930))
+#define DAT_00208930  S64(O(0x00208930))
+#define _DAT_00208938 S64(O(0x00208938))
+#define DAT_00208938  S64(O(0x00208938))
+#define _DAT_00208940 S64(O(0x00208940))
+#define DAT_00208940  S64(O(0x00208940))
+#define DAT_00208948  S64(O(0x00208948))
+#define _DAT_00208950 S64(O(0x00208950))
+#define DAT_00208950  S64(O(0x00208950))
+#define _DAT_00208958 S64(O(0x00208958))
+#define DAT_00208958  S64(O(0x00208958))
+#define DAT_00208960  S64(O(0x00208960))
+#define DAT_00208968  S64(O(0x00208968))
+#define DAT_00208970  S32(O(0x00208970))
+#define DAT_00208974  S32(O(0x00208974))
+#define DAT_00208978  S32(O(0x00208978))
+#define DAT_0020897c  S32(O(0x0020897c))
+#define DAT_00208980  S32(O(0x00208980))
+#define _DAT_00208984 S32(O(0x00208984))
+#define DAT_00208984  S32(O(0x00208984))
+#define DAT_00208988  S64(O(0x00208988))
+
+/* Function pointers for resolution change dispatch */
+static long (*_fp_00208990)(undefined8, undefined4 *);
+static ulong (*_fp_00208998)(byte *, undefined8, undefined *);
+static ulong (*_fp_002089a0)(byte *, undefined8, void *, int);
+static undefined8 (*_fp_002089a8)(float, undefined *);
+#define DAT_00208990  _fp_00208990
+#define DAT_00208998  _fp_00208998
+#define DAT_002089a0  _fp_002089a0
+#define DAT_002089a8  _fp_002089a8
+
+/* Interpolation coefficient tables (stride 0x14=20 bytes, up to 32 entries) */
+#define DAT_002089c0  ABYTE(O(0x002089c0))
+#define DAT_002089c4  ABYTE(O(0x002089c4))
+#define DAT_002089c8  ABYTE(O(0x002089c8))
+#define DAT_002089cc  ABYTE(O(0x002089cc))
+#define DAT_002089d0  ABYTE(O(0x002089d0))
+#define DAT_00208c40  S64(O(0x00208c40))
+#define DAT_00208c60  ABYTE(O(0x00208c60))
+#define DAT_00208c64  ABYTE(O(0x00208c64))
+#define DAT_00208c68  ABYTE(O(0x00208c68))
+#define DAT_00208c6c  ABYTE(O(0x00208c6c))
+#define DAT_00208c70  ABYTE(O(0x00208c70))
+
+/* 8-byte write macro for ChangeResoInit bulk copies from undefined8* array.
+ * The Ghidra decompiler assigns undefined8 values to _DAT_ variables that may
+ * be typed as uint32_t. In the original blob these are 8-byte MOV instructions
+ * that write to contiguous BSS, covering two adjacent 4-byte fields. */
+#define WRITE64(addr, val) (*(uint64_t*)BSS(O(addr)) = (uint64_t)(val))
+
+#define DAT_00208ee0  S64(O(0x00208ee0))
 
 void FUN_00102149(int param_1,int param_2,undefined4 *param_3)
 {
@@ -224,9 +265,8 @@ long FUN_001019e4(long param_1,int *param_2)
     }
     local_34 = 0;
     while (local_34 < local_38) {
-      FUN_0010222c(*(int *)(param_1 + 0x28),*(long *)(param_1 + 0x18),*param_2);
-      undefined extra;
-      lVar1 = (*DAT_002089a8)(local_2c, &extra);
+      long _outAddr = FUN_0010222c(*(int *)(param_1 + 0x28),*(long *)(param_1 + 0x18),*param_2);
+      lVar1 = (*DAT_002089a8)(local_2c, (undefined *)_outAddr);
       local_28 = local_28 + lVar1;
       local_34 = local_34 + 1;
       local_2c = local_2c + fVar3 / fVar2;
@@ -302,9 +342,8 @@ long FUN_00101cba(long param_1,int *param_2)
     }
     local_34 = 0;
     while (local_34 < local_38) {
-      FUN_0010222c(*(int *)(param_1 + 0x28),*(long *)(param_1 + 0x18),*param_2);
-      undefined extra;
-      lVar1 = (*DAT_002089a8)(local_2c, &extra);
+      long _outAddr = FUN_0010222c(*(int *)(param_1 + 0x28),*(long *)(param_1 + 0x18),*param_2);
+      lVar1 = (*DAT_002089a8)(local_2c, (undefined *)_outAddr);
       local_28 = local_28 + lVar1;
       local_34 = local_34 + 1;
       local_2c = local_2c + fVar3 / fVar2;
@@ -355,9 +394,8 @@ long FUN_00101eae(int *param_1,int *param_2)
     }
     local_34 = 0;
     while (local_34 < local_38) {
-      FUN_0010222c(param_1[10],*(long *)(param_1 + 6),*param_2);
-      undefined extra;
-      lVar2 = (*DAT_002089a8)(local_2c, &extra);
+      long _outAddr = FUN_0010222c(param_1[10],*(long *)(param_1 + 6),*param_2);
+      lVar2 = (*DAT_002089a8)(local_2c, (undefined *)_outAddr);
       local_28 = local_28 + lVar2;
       local_34 = local_34 + 1;
       local_2c = local_2c + fVar4 / fVar3;
@@ -533,19 +571,12 @@ ulong FUN_0010260e(void)
   float fVar1;
   float fVar2;
   float fVar3;
-  undefined4 extraout_XMM0_Da;
-  undefined4 extraout_XMM0_Da_00;
-  undefined4 extraout_XMM0_Da_01;
-  undefined4 extraout_XMM0_Da_02;
-  undefined4 extraout_XMM0_Da_03;
-  undefined4 extraout_XMM0_Da_04;
-  undefined4 extraout_XMM0_Da_05;
-  undefined4 extraout_XMM0_Da_06;
+  float fSpline;
   float fVar4;
   float fVar5;
   uint local_30;
   int local_2c;
-  
+
   fVar4 = (float)DAT_00208970;
   fVar1 = (float)DAT_00208974;
   fVar5 = (float)DAT_00208978;
@@ -559,14 +590,14 @@ ulong FUN_0010260e(void)
       goto LAB_00102938;
     }
     *(float *)(&DAT_002089c0 + (long)local_2c * 0x14) = fVar3;
-    FUN_00105413(fVar3 + 1.00000000);
-    *(undefined4 *)(&DAT_002089c4 + (long)local_2c * 0x14) = extraout_XMM0_Da;
-    FUN_00105413(fVar3);
-    *(undefined4 *)(&DAT_002089c8 + (long)local_2c * 0x14) = extraout_XMM0_Da_00;
-    FUN_00105413(1.00000000 - fVar3);
-    *(undefined4 *)(&DAT_002089cc + (long)local_2c * 0x14) = extraout_XMM0_Da_01;
-    FUN_00105413(2.00000000 - fVar3);
-    *(undefined4 *)(&DAT_002089d0 + (long)local_2c * 0x14) = extraout_XMM0_Da_02;
+    fSpline = FUN_00105413(fVar3 + 1.00000000);
+    *(float *)(&DAT_002089c4 + (long)local_2c * 0x14) = fSpline;
+    fSpline = FUN_00105413(fVar3);
+    *(float *)(&DAT_002089c8 + (long)local_2c * 0x14) = fSpline;
+    fSpline = FUN_00105413(1.00000000 - fVar3);
+    *(float *)(&DAT_002089cc + (long)local_2c * 0x14) = fSpline;
+    fSpline = FUN_00105413(2.00000000 - fVar3);
+    *(float *)(&DAT_002089d0 + (long)local_2c * 0x14) = fSpline;
     local_2c = local_2c + 1;
   }
   local_2c = 0;
@@ -583,14 +614,14 @@ LAB_00102938:
       goto LAB_00102938;
     }
     *(float *)(&DAT_00208c60 + (long)local_2c * 0x14) = fVar1;
-    FUN_00105413(fVar1 + 1.00000000);
-    *(undefined4 *)(&DAT_00208c64 + (long)local_2c * 0x14) = extraout_XMM0_Da_03;
-    FUN_00105413(fVar1);
-    *(undefined4 *)(&DAT_00208c68 + (long)local_2c * 0x14) = extraout_XMM0_Da_04;
-    FUN_00105413(1.00000000 - fVar1);
-    *(undefined4 *)(&DAT_00208c6c + (long)local_2c * 0x14) = extraout_XMM0_Da_05;
-    FUN_00105413(2.00000000 - fVar1);
-    *(undefined4 *)(&DAT_00208c70 + (long)local_2c * 0x14) = extraout_XMM0_Da_06;
+    fSpline = FUN_00105413(fVar1 + 1.00000000);
+    *(float *)(&DAT_00208c64 + (long)local_2c * 0x14) = fSpline;
+    fSpline = FUN_00105413(fVar1);
+    *(float *)(&DAT_00208c68 + (long)local_2c * 0x14) = fSpline;
+    fSpline = FUN_00105413(1.00000000 - fVar1);
+    *(float *)(&DAT_00208c6c + (long)local_2c * 0x14) = fSpline;
+    fSpline = FUN_00105413(2.00000000 - fVar1);
+    *(float *)(&DAT_00208c70 + (long)local_2c * 0x14) = fSpline;
     local_2c = local_2c + 1;
   } while(1);
 }
@@ -1313,11 +1344,11 @@ ulong FUN_00104412(byte *param_1,undefined8 param_2,void *param_3,int param_4)
   return DAT_00208968;
 }
 
-ulong FUN_00105413(float param_1)
+float FUN_00105413(float param_1)
 {
   float local_14;
   float local_10;
-  
+
   local_10 = param_1;
   if (param_1 < 0.00000000) {
     local_10 = (float)((uint)param_1 ^ 0x80000000);
@@ -1334,7 +1365,7 @@ ulong FUN_00105413(float param_1)
   else {
     local_14 = local_10 * local_10 * local_10 + (1.00000000 - (local_10 + local_10) * local_10);
   }
-  return (ulong)(uint)local_14;
+  return local_14;
 }
 
 long FUN_0010222c(int param_1,long param_2,int param_3)
@@ -1837,8 +1868,7 @@ ulong FUN_00105879(float param_1,float param_2,float param_3,float param_4,undef
     local_38 = local_38 + 1;
   }
   if (local_50 != 0.00000000) {
-    auVar4 = movlpd(ZEXT416((uint)(local_4c / local_50)),0x3fe0000000000000);
-    *param_5 = (char)(int)(SUB168(auVar4,0) + (double)(local_4c / local_50));
+    *param_5 = (char)(int)((double)(local_4c / local_50) + 0.5);
   }
   return (ulong)(local_50 != 0.00000000);
 }
@@ -1898,8 +1928,7 @@ ulong FUN_00105aa6(float param_1,float param_2,float param_3,float param_4,undef
     local_38 = local_38 + 1;
   }
   if (local_50 != 0.00000000) {
-    auVar4 = movlpd(ZEXT416((uint)(local_4c / local_50)),0x3fe0000000000000);
-    *param_5 = (char)(int)(SUB168(auVar4,0) + (double)(local_4c / local_50));
+    *param_5 = (char)(int)((double)(local_4c / local_50) + 0.5);
   }
   return (ulong)(local_50 != 0.00000000);
 }
@@ -1989,14 +2018,9 @@ ulong FUN_00105cd3(float param_1,float param_2,float param_3,float param_4,undef
     local_48 = local_48 + 1;
   }
   if (local_68 != 0.00000000) {
-    auVar2 = movlpd(ZEXT416((uint)(local_64 / local_68)),0x3fe0000000000000);
-    dVar1 = SUB168(auVar2,0) + (double)(local_5c / local_68);
-    *local_20 = (char)(int)dVar1;
-    auVar2 = movlpd(CONCAT88(SUB168(auVar2 >> 0x40,0),dVar1),0x3fe0000000000000);
-    dVar1 = SUB168(auVar2,0) + (double)(local_60 / local_68);
-    *local_28 = (char)(int)dVar1;
-    auVar2 = movlpd(CONCAT88(SUB168(auVar2 >> 0x40,0),dVar1),0x3fe0000000000000);
-    *local_30 = (char)(int)(SUB168(auVar2,0) + (double)(local_64 / local_68));
+    *local_20 = (char)(int)((double)(local_5c / local_68) + 0.5);
+    *local_28 = (char)(int)((double)(local_60 / local_68) + 0.5);
+    *local_30 = (char)(int)((double)(local_64 / local_68) + 0.5);
   }
   return (ulong)(local_68 != 0.00000000);
 }
@@ -2113,30 +2137,29 @@ void FUN_00105279(ulong param_1,int param_2,float *param_3,float *param_4,float 
   return;
 }
 
-ulong FUN_0010553d(long param_1)
+float FUN_0010553d(long param_1)
 {
   long lVar1;
   long lVar2;
   long lVar3;
-  undefined4 extraout_XMM0_Da;
-  float extraout_XMM0_Da_00;
+  float fResult;
   uint local_4c;
-  undefined4 local_38 [5];
+  float local_38 [5];
   int local_24;
   long local_20;
-  
+
   lVar1 = (long)DAT_00208c40;
   lVar2 = (long)DAT_00208ee0;
   local_24 = 0;
   local_20 = param_1;
   while (local_24 < 4) {
     lVar3 = (long)local_24;
-    FUN_001053a0((long)(&DAT_00208c64 + lVar2 * 0x14),(long)local_24 * 0x10 + local_20);
-    local_38[lVar3] = extraout_XMM0_Da;
+    fResult = FUN_001053a0((long)(&DAT_00208c64 + lVar2 * 0x14),(long)local_24 * 0x10 + local_20);
+    local_38[lVar3] = fResult;
     local_24 = local_24 + 1;
   }
-  FUN_001053a0((long)local_38,(long)(&DAT_002089c4 + lVar1 * 0x14));
-  local_4c = (uint)extraout_XMM0_Da_00;
+  fResult = FUN_001053a0((long)local_38,(long)(&DAT_002089c4 + lVar1 * 0x14));
+  local_4c = (uint)(int)fResult;
   if ((int)local_4c < 0) {
     local_4c = 0;
   }
@@ -2145,14 +2168,14 @@ ulong FUN_0010553d(long param_1)
       local_4c = 0xff;
     }
   }
-  return (ulong)local_4c;
+  return (float)local_4c;
 }
 
-ulong FUN_001053a0(long param_1,long param_2)
+float FUN_001053a0(long param_1,long param_2)
 {
   float local_20;
   int local_1c;
-  
+
   local_20 = 0.00000000;
   local_1c = 0;
   while (local_1c < 4) {
@@ -2160,7 +2183,7 @@ ulong FUN_001053a0(long param_1,long param_2)
                *(float *)((long)local_1c * 4 + param_1) * *(float *)((long)local_1c * 4 + param_2);
     local_1c = local_1c + 1;
   }
-  return (ulong)(uint)local_20;
+  return local_20;
 }
 
 ulong ChangeResoInit(undefined8 *param_1)
@@ -2228,14 +2251,14 @@ ulong ChangeResoInit(undefined8 *param_1)
       local_10[5] = SUB168(ZEXT816(0xaaaaaaaaaaaaaaab) * ZEXT816(DAT_00208968) >> 0x41,0);
     }
   }
-  _DAT_00208920 = *local_10;
-  _DAT_00208928 = local_10[1];
-  _DAT_00208930 = local_10[2];
-  _DAT_00208938 = local_10[3];
-  _DAT_00208940 = local_10[4];
+  WRITE64(0x00208920, *local_10);
+  WRITE64(0x00208928, local_10[1]);
+  WRITE64(0x00208930, local_10[2]);
+  WRITE64(0x00208938, local_10[3]);
+  WRITE64(0x00208940, local_10[4]);
   DAT_00208948 = local_10[5];
-  _DAT_00208950 = local_10[6];
-  _DAT_00208958 = local_10[7];
+  WRITE64(0x00208950, local_10[6]);
+  WRITE64(0x00208958, local_10[7]);
   uVar1 = FUN_0010227a(&local_14);
   if ((int)uVar1 == 0) {
     local_24 = 0;
@@ -2260,14 +2283,14 @@ ulong ChangeResoInit(undefined8 *param_1)
          (DAT_002088c0 = bugchk_malloc((long)DAT_002088d8 * DAT_002088d0, __FILE__, __LINE__),
          DAT_002088c0 != (undefined8 *)0x0)) {
         local_10[7] = local_20;
-        _DAT_00208920 = *local_10;
-        _DAT_00208928 = local_10[1];
-        _DAT_00208930 = local_10[2];
-        _DAT_00208938 = local_10[3];
-        _DAT_00208940 = local_10[4];
+        WRITE64(0x00208920, *local_10);
+        WRITE64(0x00208928, local_10[1]);
+        WRITE64(0x00208930, local_10[2]);
+        WRITE64(0x00208938, local_10[3]);
+        WRITE64(0x00208940, local_10[4]);
         DAT_00208948 = local_10[5];
-        _DAT_00208950 = local_10[6];
-        _DAT_00208958 = local_10[7];
+        WRITE64(0x00208950, local_10[6]);
+        WRITE64(0x00208958, local_10[7]);
         local_24 = 1;
       }
       else {

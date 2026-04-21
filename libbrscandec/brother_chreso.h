@@ -34,7 +34,7 @@ static ulong FUN_00104296(byte *param_1,long param_2,undefined2 *param_3);
 static ulong FUN_00104365(void *param_1,undefined8 param_2,void *param_3);
 static ulong FUN_00104399(undefined *param_1,ulong param_2,undefined *param_3,int param_4);
 static ulong FUN_00104412(byte *param_1,undefined8 param_2,void *param_3,int param_4);
-static ulong FUN_00105413(float param_1);
+static float FUN_00105413(float param_1);
 static long FUN_0010222c(int param_1,long param_2,int param_3);
 static ulong FUN_001044ca(void *param_1);
 static ulong FUN_00104654(void *param_1);
@@ -51,8 +51,8 @@ static ulong FUN_00105aa6(float param_1,float param_2,float param_3,float param_
 static ulong FUN_00105cd3(float param_1,float param_2,float param_3,float param_4,undefined *param_5,undefined *param_6,undefined *param_7);
 static ulong FUN_00104754(void *param_1,int param_2);
 static void FUN_00105279(ulong param_1,int param_2,float *param_3,float *param_4,float *param_5);
-static ulong FUN_0010553d(long param_1);
-static ulong FUN_001053a0(long param_1,long param_2);
+static float FUN_0010553d(long param_1);
+static float FUN_001053a0(long param_1,long param_2);
 
 ulong ChangeResoInit(undefined8 *param_1);
 undefined8 ChangeResoClose(void);
