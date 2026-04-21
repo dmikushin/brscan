@@ -148,7 +148,7 @@
 #define		ZLE_FB_DCP_CM_NAME	"ZLeFB/brlutcm.dat"
 #define		ZL2_FB_DCP_CM_NAME	"ZL2FB/brmsl07f.cm"
 
-#define         ANOTHERENDPOINT         (0)
+#define         ANOTHERENDPOINT         (2)
 
 #else    //BRSANESUFFIX
   force causing compile error
@@ -254,7 +254,7 @@ typedef union tagSCANMODELIST {
 	WORD  bErrorDiffusion:1; /* error-diffusion */
 	WORD  bTrueGray:1;	 /* gray scale */
 	WORD  b24BitColor:1;	 /* 24 bit color */
-	WORD  b24BitNoCMatch:1;	 /* fast 24 bit color ¡Êwithout ColorMatch¡Ë */
+	WORD  b24BitNoCMatch:1;	 /* fast 24 bit color ï¿½ï¿½without ColorMatchï¿½ï¿½ */
     } bit;
     WORD val;
 } SCANMODELIST, *PSCANMODELIST;

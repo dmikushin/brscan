@@ -41,10 +41,31 @@ BOOL ScanDecOpen(SCANDEC_OPEN *param_1)
     return 0;
   }
 
-  /* Copy input struct to local, call ChangeResoInit, copy outputs back.
-   * ChangeResoInit fills dwOutLinePixCnt, dwOutLineByte, dwOutWriteMaxSize. */
-  SCANDEC_OPEN localCopy = *param_1;
-  ulong uVar1 = ChangeResoInit((undefined8 *)&localCopy);
+  /* ChangeResoInit was reverse-engineered from x86-64 where DWORD (unsigned long)
+   * is 8 bytes. It reads the struct as an array of uint64_t. On 32-bit ARM,
+   * DWORD is 4 bytes and the struct layout is different. We build a fixed
+   * 64-byte x86-64-layout buffer to pass to ChangeResoInit, then unpack. */
+  uint64_t buf[8] = {0};
+  /* x86-64 layout:
+   * [0] = nInResoX(4) + nInResoY(4)
+   * [1] = nOutResoX(4) + nOutResoY(4)
+   * [2] = nColorType(4) + padding(4)
+   * [3] = dwInLinePixCnt(8)
+   * [4] = nOutDataKind(4) + bLongBoundary(4)
+   * [5] = dwOutLinePixCnt(8) (output)
+   * [6] = dwOutLineByte(8)   (output)
+   * [7] = dwOutWriteMaxSize(8) (output)
+   */
+  ((int*)&buf[0])[0] = param_1->nInResoX;
+  ((int*)&buf[0])[1] = param_1->nInResoY;
+  ((int*)&buf[1])[0] = param_1->nOutResoX;
+  ((int*)&buf[1])[1] = param_1->nOutResoY;
+  ((int*)&buf[2])[0] = param_1->nColorType;
+  buf[3] = (uint64_t)param_1->dwInLinePixCnt;
+  ((int*)&buf[4])[0] = param_1->nOutDataKind;
+  ((int*)&buf[4])[1] = param_1->bLongBoundary;
+
+  ulong uVar1 = ChangeResoInit(buf);
 
   if ((int)uVar1 == 0) {
     bugchk_free(bugchk, __FILE__, __LINE__);
@@ -52,9 +73,9 @@ BOOL ScanDecOpen(SCANDEC_OPEN *param_1)
     return 0;
   }
 
-  param_1->dwOutLinePixCnt  = localCopy.dwOutLinePixCnt;
-  param_1->dwOutLineByte    = localCopy.dwOutLineByte;
-  param_1->dwOutWriteMaxSize = localCopy.dwOutWriteMaxSize;
+  param_1->dwOutLinePixCnt  = (DWORD)buf[5];
+  param_1->dwOutLineByte    = (DWORD)buf[6];
+  param_1->dwOutWriteMaxSize = (DWORD)buf[7];
 
   DAT_00208f00 = 0;
   DAT_00208f08 = 0;
@@ -76,31 +97,17 @@ BOOL ScanDecClose(void)
 
 DWORD ScanDecPageEnd(SCANDEC_WRITE *param_1, INT *param_2)
 {
-  /*
-   * Build a ChangeReso struct on the stack with zeroed data fields
-   * (PageEnd flushes remaining buffered lines, no new input).
-   * Verified against disassembly at 0x6309-0x63aa.
-   */
-  struct {
-    int     field_00;       /* +0x00: from param_1->nInDataKind */
-    int     _pad;           /* +0x04 */
-    void   *dataPtr;        /* +0x08: NULL for PageEnd */
-    unsigned long dataSize; /* +0x10: 0 for PageEnd */
-    void   *writeBuff;      /* +0x18: param_1->pWriteBuff */
-    unsigned long writeSize;/* +0x20: param_1->dwWriteBuffSize */
-    int     reverWrite;     /* +0x28: param_1->bReverWrite */
-  } resoIn;
-
-  resoIn.field_00  = param_1->nInDataKind;
-  resoIn._pad      = 0;
-  resoIn.dataPtr   = 0;
-  resoIn.dataSize  = 0;
-  resoIn.writeBuff = param_1->pWriteBuff;
-  resoIn.writeSize = param_1->dwWriteBuffSize;
-  resoIn.reverWrite = param_1->bReverWrite;
+  /* Build x86-64 layout ChangeReso struct (see ScanDecWrite for layout docs) */
+  uint64_t resoIn[6] = {0};
+  ((int*)&resoIn[0])[0] = param_1->nInDataKind;
+  resoIn[1] = 0;  /* dataPtr = NULL for PageEnd */
+  resoIn[2] = 0;  /* dataSize = 0 */
+  resoIn[3] = (uint64_t)(uintptr_t)param_1->pWriteBuff;
+  resoIn[4] = (uint64_t)param_1->dwWriteBuffSize;
+  ((int*)&resoIn[5])[0] = param_1->bReverWrite;
 
   *param_2 = 0;
-  long lVar1 = ChangeResoWriteEnd((undefined8)(uintptr_t)&resoIn, (undefined4 *)param_2);
+  long lVar1 = ChangeResoWriteEnd((void*)resoIn, (undefined4 *)param_2);
 
   DAT_00208ef0 = 0;
   if (DAT_00208f08 != 0) {
@@ -154,32 +161,27 @@ DWORD ScanDecWrite(SCANDEC_WRITE *param_1, INT *param_2)
 {
   /*
    * Call decode function pointer, then pass result to ChangeResoWrite.
-   * Verified against disassembly at 0x6287-0x6308.
-   * Key fix: the local struct starts at rbp-0x50, NOT rbp-0x58 as Ghidra claimed.
+   * Build x86-64 layout struct (uint64_t array) for portability:
+   *   [0] +0x00: nInDataKind (int) + padding
+   *   [1] +0x08: decoded data pointer (8 bytes)
+   *   [2] +0x10: decoded data size (8 bytes)
+   *   [3] +0x18: output write buffer pointer (8 bytes)
+   *   [4] +0x20: output write buffer size (8 bytes)
+   *   [5] +0x28: reverWrite flag (int) + padding
    */
   size_t decodedSize;
   byte *decodedData = (*DAT_00208f20)(param_1, &decodedSize);
 
-  struct {
-    int     field_00;       /* +0x00: param_1->nInDataKind */
-    int     _pad;           /* +0x04 */
-    void   *dataPtr;        /* +0x08: decoded data pointer */
-    unsigned long dataSize; /* +0x10: decoded data size */
-    void   *writeBuff;      /* +0x18: param_1->pWriteBuff */
-    unsigned long writeSize;/* +0x20: param_1->dwWriteBuffSize */
-    int     reverWrite;     /* +0x28: param_1->bReverWrite */
-  } resoIn;
-
-  resoIn.field_00   = param_1->nInDataKind;
-  resoIn._pad       = 0;
-  resoIn.dataPtr    = decodedData;
-  resoIn.dataSize   = decodedSize;
-  resoIn.writeBuff  = param_1->pWriteBuff;
-  resoIn.writeSize  = param_1->dwWriteBuffSize;
-  resoIn.reverWrite = param_1->bReverWrite;
+  uint64_t resoIn[6] = {0};
+  ((int*)&resoIn[0])[0] = param_1->nInDataKind;
+  resoIn[1] = (uint64_t)(uintptr_t)decodedData;
+  resoIn[2] = (uint64_t)decodedSize;
+  resoIn[3] = (uint64_t)(uintptr_t)param_1->pWriteBuff;
+  resoIn[4] = (uint64_t)param_1->dwWriteBuffSize;
+  ((int*)&resoIn[5])[0] = param_1->bReverWrite;
 
   *param_2 = 0;
-  return ChangeResoWrite((undefined8)(uintptr_t)&resoIn, (undefined4 *)param_2);
+  return ChangeResoWrite((void*)resoIn, (undefined4 *)param_2);
 }
 
 byte * FUN_001063f3(SCANDEC_WRITE *param_1,size_t *param_2)

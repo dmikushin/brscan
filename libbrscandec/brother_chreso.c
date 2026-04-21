@@ -76,7 +76,7 @@ static char _bss[0x0D00] __attribute__((aligned(16)));
 #define DAT_00208988  S64(O(0x00208988))
 
 /* Function pointers for resolution change dispatch */
-static long (*_fp_00208990)(undefined8, undefined4 *);
+static long (*_fp_00208990)(void *, undefined4 *);
 static ulong (*_fp_00208998)(byte *, undefined8, undefined *);
 static ulong (*_fp_002089a0)(byte *, undefined8, void *, int);
 static undefined8 (*_fp_002089a8)(float, undefined *);
@@ -2308,7 +2308,7 @@ undefined8 ChangeResoClose(void)
   return 1;
 }
 
-long ChangeResoWrite(undefined8 param_1,undefined4 *param_2)
+long ChangeResoWrite(void *param_1,undefined4 *param_2)
 {
   *param_2 = 0;
   return (*DAT_00208990)(param_1,param_2);
@@ -2330,7 +2330,7 @@ ulong ChangeResoWriteStart(void)
   return 1;
 }
 
-long ChangeResoWriteEnd(undefined8 param_1,undefined4 *param_2)
+long ChangeResoWriteEnd(void *param_1,undefined4 *param_2)
 {
   long local_20;
   

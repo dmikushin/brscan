@@ -218,31 +218,47 @@ OpenDevice(usb_dev_handle *hScanner, int seriesNo)
 				break;
 		}
 	}
-	if (rc < 0)
+	if (rc < 0) {
+		WriteLog("OpenDevice FAIL: usb_control_msg rc=%d", rc);
 		return FALSE;
+	}
+
+	WriteLog("OpenDevice ctrl_msg rc=%d data=%02x %02x %02x %02x %02x",
+		rc, (unsigned char)data[0], (unsigned char)data[1],
+		(unsigned char)data[2], (unsigned char)data[3], (unsigned char)data[4]);
 
 	// check the size of discriptor
 	nValue = (int) data[0];
-	if (nValue != BREQ_GET_LENGTH)
+	if (nValue != BREQ_GET_LENGTH) {
+		WriteLog("OpenDevice FAIL: data[0]=%d != BREQ_GET_LENGTH=%d", nValue, BREQ_GET_LENGTH);
 		return FALSE;
+	}
 
 	// check the type of discriptor
 	nValue = (int)data[1];
-	if (nValue != BDESC_TYPE)
+	if (nValue != BDESC_TYPE) {
+		WriteLog("OpenDevice FAIL: data[1]=%d != BDESC_TYPE=%d", nValue, BDESC_TYPE);
 		return FALSE;
+	}
 
 	// check the command ID
 	nValue = (int)data[2];
-	if (nValue != BREQ_GET_OPEN)
+	if (nValue != BREQ_GET_OPEN) {
+		WriteLog("OpenDevice FAIL: data[2]=%d != BREQ_GET_OPEN=%d", nValue, BREQ_GET_OPEN);
 		return FALSE;
+	}
 
 	// check the command parameters
 	nValue = (int)*((WORD *)&data[3]);
-	if (nValue & BCOMMAND_RETURN)
+	if (nValue & BCOMMAND_RETURN) {
+		WriteLog("OpenDevice FAIL: BCOMMAND_RETURN set (data[3..4]=0x%04x)", nValue);
 		return FALSE;
+	}
 
-	if (nValue != BCOMMAND_SCANNER)
+	if (nValue != BCOMMAND_SCANNER) {
+		WriteLog("OpenDevice FAIL: data[3..4]=0x%04x != BCOMMAND_SCANNER", nValue);
 		return FALSE;
+	}
 
 	OPEN_POST_PROC:
 
@@ -593,7 +609,7 @@ ReadNonFixedData( usb_dev_handle *hScanner, LPSTR lpBuffer, WORD wReadSize, DWOR
 //	Note:
 //
 //-----------------------------------------------------------------------------
-//	ReadBidiFixedData¡ÊµìReadBidiComm32_q¡Ë
+//	ReadBidiFixedDataï¿½Êµï¿½ReadBidiComm32_qï¿½ï¿½
 BOOL
 ReadFixedData( usb_dev_handle *hScanner, LPSTR lpBuffer, WORD wReadSize, DWORD dwTimeOutMsec, int seriesNo )
 {
@@ -647,7 +663,7 @@ ReadFixedData( usb_dev_handle *hScanner, LPSTR lpBuffer, WORD wReadSize, DWORD d
 
 		if( wReadCount >= wReadSize ) break;	// terminate if reading data is completed
 
-		usleep(20 * 1000); // 20msÂÔ¤Ä
+		usleep(20 * 1000); // 20msï¿½Ô¤ï¿½
 	}
 
 	return bResult;

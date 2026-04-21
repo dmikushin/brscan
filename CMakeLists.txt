@@ -41,6 +41,11 @@ add_library(sane-brother SHARED
 	libsane-brother/sanei_config.c
 	libsane-brother/sanei_constrain_value.c
 	libsane-brother/sanei_init_debug.c)
+# stubs.c provides sane_init→sane_brother_init wrappers.
+# Compiled as a plain C file without BACKEND_NAME to avoid macro conflicts.
+add_library(sane-brother-stubs OBJECT libsane-brother/stubs.c)
+target_include_directories(sane-brother-stubs PRIVATE ${SANE_INCLUDE_DIR})
+set_target_properties(sane-brother-stubs PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(sane-brother PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/include
 	${CMAKE_CURRENT_SOURCE_DIR}/libbrscandec
@@ -48,7 +53,7 @@ target_include_directories(sane-brother PRIVATE
 	${SANE_INCLUDE_DIR}
 	${LIBUSB_INCLUDE_DIR})
 target_compile_definitions(sane-brother PRIVATE BACKEND_NAME=brother BRSANESUFFIX V_MAJOR=1 V_MINOR=0)
-target_link_libraries(sane-brother dl pthread usb ${LIBUSB_LIBRARIES})
+target_link_libraries(sane-brother dl pthread usb ${LIBUSB_LIBRARIES} sane-brother-stubs)
 set_target_properties(sane-brother PROPERTIES SOVERSION 1)
 
 add_executable(brsaneconfig
