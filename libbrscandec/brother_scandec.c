@@ -223,7 +223,7 @@ byte * FUN_001063f3(SCANDEC_WRITE *param_1,size_t *param_2)
           }
           bVar1 = *local_20;
           pbVar3 = local_20 + 1;
-          if ((char)bVar1 < '\0') {
+          if ((signed char)bVar1 < 0) {
             if (bVar1 != 0x80) {
               local_32 = '\x01' - bVar1;
               bVar1 = *pbVar3;
@@ -268,7 +268,7 @@ byte * FUN_001063f3(SCANDEC_WRITE *param_1,size_t *param_2)
           }
           bVar1 = *local_20;
           pbVar3 = local_20 + 1;
-          if ((char)bVar1 < '\0') {
+          if ((signed char)bVar1 < 0) {
             if (bVar1 != 0x80) {
               local_32 = '\x01' - bVar1;
               bVar1 = *pbVar3;
@@ -372,7 +372,7 @@ undefined * FUN_00106751(SCANDEC_WRITE *param_1,size_t *param_2)
           }
           bVar2 = *local_28;
           pbVar4 = local_28 + 1;
-          if ((char)bVar2 < '\0') {
+          if ((signed char)bVar2 < 0) {
             if (bVar2 != 0x80) {
               local_3a = '\x01' - bVar2;
               bVar2 = *pbVar4;
@@ -444,7 +444,7 @@ undefined * FUN_00106751(SCANDEC_WRITE *param_1,size_t *param_2)
           }
           bVar2 = *local_28;
           pbVar4 = local_28 + 1;
-          if ((char)bVar2 < '\0') {
+          if ((signed char)bVar2 < 0) {
             if (bVar2 != 0x80) {
               local_3a = '\x01' - bVar2;
               bVar2 = *pbVar4;
