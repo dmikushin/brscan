@@ -537,7 +537,7 @@ StatusChk(char *lpBuff, int nDataSize)
 
 		headch = (BYTE)*pt;
 
-		if ((char)headch < 0) {
+		if ((signed char)headch < 0) {
 			// code of STATUS,CTRL family
 			// refer the following header information
 			//06/02/28
@@ -718,7 +718,14 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 				int sc;
 				wData += rc;
 
-				sc = StatusChk(lpRxBuff, wData);
+				/* StatusChk uses the standard line format to scan for
+				 * status bytes. For brscan4 models, the data format is
+				 * different and StatusChk would false-positive on
+				 * compressed data bytes >= 0x80. Skip it. */
+				if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL)
+					sc = 0;
+				else
+					sc = StatusChk(lpRxBuff, wData);
 				if (sc == 1) { // check whether the status code has been received or not
 					this->scanState.bReadbufEnd = TRUE;
 					WriteLog( "bReadbufEnd =TRUE" );
@@ -779,7 +786,7 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 			if (dwRxTempBuffLength < 12) break;
 
 			BYTE headch = (BYTE)*pt;
-			if ((char)headch < 0) {
+			if ((signed char)headch < 0) {
 				/* Status/control code */
 				dwRxTempBuffLength--;
 				pt++;
@@ -829,7 +836,7 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 		if( dwRxTempBuffLength <= 0 )	break;
 
 		headch = (BYTE)*pt;
-		if ((char)headch < 0) {
+		if ((signed char)headch < 0) {
 			// STATUS,CTRL code family
 			dwRxTempBuffLength --;
 			pt++;
@@ -900,7 +907,7 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 			if(headch == 0x84 || headch == 0x85 || (char)headch == 0 ){
 			  lpOrg++;
 			  wDataLineCntTemp--;
-			}else if((char)headch < 0){
+			}else if((signed char)headch < 0){
 			  break;
 			}else{
 				// Image data
@@ -978,6 +985,13 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 	if ((dwRxTempBuffLength > 0) || (wProcessSize < wData)) {
 		dwRxTempBuffLength += (wData - wProcessSize);
 		memmove( lpRxTempBuff, lpRxBuff+wProcessSize, dwRxTempBuffLength );	// Keep the rest data
+	}
+
+	/* DCP-1510 (brscan4) does not send an EOF status byte.
+	 * Detect scan completion by checking if all expected lines arrived. */
+	if (nAnswer == SCAN_GOOD && lRealY >= this->scanInfo.ScanAreaSize.lHeight) {
+		WriteLog("  brscan4: all %ld lines received, forcing EOF", (long)lRealY);
+		nAnswer = SCAN_EOF;
 	}
 
 	if ( nAnswer == SCAN_EOF || nAnswer == SCAN_MPS )  {
@@ -1296,7 +1310,7 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 		if( dwRxTempBuffLength <= 0 )	break;	// ���ƤΥǡ����Ͻ�����ǽ(���ڤ��ɤ��������줿)
 
 		headch = (BYTE)*pt;
-		if ((char)headch < 0) {
+		if ((signed char)headch < 0) {
 			// STATUS,CTRL�ϥ�����
 			dwRxTempBuffLength --;			// CTRL�ϥ����ɤ�1byte����
 			pt++;					// ����header����򻲾�
@@ -2078,7 +2092,7 @@ ProcessMain(Brother_Scanner *this, WORD wByte, WORD wDataLineCnt, char * lpFwBuf
 		  wLineCnt += 2;
 		  answer = SCAN_DUPLEX_REVERSE;
 		}
-		else if( Header < 0 ){
+		else if( (signed char)Header < 0 ){
 			//
 			//	Status code
 			//
