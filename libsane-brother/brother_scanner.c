@@ -775,7 +775,7 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 	 */
 	if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL) {
 		for (wDataLineCnt=0; wDataLineCnt < nFwTempBuffMaxLine;) {
-			/* Need at least 12 bytes: 10 wrapper + 1 length + 1 pad */
+			/* Need at least 12 bytes: 10 wrapper + 2 length */
 			if (dwRxTempBuffLength < 12) break;
 
 			BYTE headch = (BYTE)*pt;
@@ -800,8 +800,8 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 				break;
 			}
 
-			/* Skip 10-byte wrapper */
-			WORD clen = (unsigned char)pt[10];  /* 1-byte compressed length */
+			/* Skip 10-byte wrapper, read 2-byte LE length */
+			WORD clen = (unsigned char)pt[10] | ((unsigned char)pt[11] << 8);
 			DWORD lineTotal = 12 + (DWORD)clen;
 
 			if (dwRxTempBuffLength < lineTotal) break;
@@ -2100,9 +2100,9 @@ ProcessMain(Brother_Scanner *this, WORD wByte, WORD wDataLineCnt, char * lpFwBuf
 				 * Header 0x42 already consumed. lpScn points to byte 1 (0x07).
 				 * Skip remaining 9 wrapper bytes, read 1-byte length, skip padding.
 				 */
-				lpScn += 9;  /* skip to the length byte (byte 10 of original frame) */
-				count = (WORD)(unsigned char)*lpScn++;  /* 1-byte compressed length */
-				lpScn++;  /* skip 0x00 padding */
+				lpScn += 9;  /* skip to length field (bytes 10-11 of original frame) */
+				count = (WORD)((unsigned char)lpScn[0] | ((unsigned char)lpScn[1] << 8)); /* 2-byte LE length */
+				lpScn += 2;
 				lpSrc = lpScn;
 				Dcount = count;
 
