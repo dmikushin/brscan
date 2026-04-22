@@ -92,7 +92,7 @@
 #define         MUST_CONVERT_MODEL      10
 
 /* define models that must be chenaged endpoint */
-#define         ANOTHERENDPOINT         6
+#define         ANOTHERENDPOINT         7
 
 /* define the GRAY-LEVEL data file name */
 /*

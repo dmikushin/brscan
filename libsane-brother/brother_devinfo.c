@@ -409,6 +409,11 @@ QueryScanInfoProc(
 
 		lpDataBuff = pReadBuf+2; // Move pointer for reginon of size.
 		wReadSize = nRealReadSize-2;
+		/* DCP-1510 and similar models may have extra null byte(s) before CSV data */
+		while (wReadSize > 0 && *lpDataBuff == '\0') {
+			lpDataBuff++;
+			wReadSize--;
+		}
 
 		//Read scanner information
 		//

@@ -27,77 +27,23 @@
 #define	BUGCHK_SIGN_VALUE	0x53545244 /* STRD */
 typedef	unsigned long	BUGCHK_SIGN;
 
-int nMallocCnt=0; // Malloc´Ø¿ô ¸Æ½Ð¤·²ó¿ô
-int nFreeCnt=0; // Free´Ø¿ô ¸Æ½Ð¤·²ó¿ô
+int nMallocCnt=0; // Mallocï¿½Ø¿ï¿½ ï¿½Æ½Ð¤ï¿½ï¿½ï¿½ï¿½
+int nFreeCnt=0; // Freeï¿½Ø¿ï¿½ ï¿½Æ½Ð¤ï¿½ï¿½ï¿½ï¿½
 
 void *bugchk_malloc(size_t size, int line, const char *file)
 {
-    char *pRet;
-
-    nMallocCnt++;
-
-    pRet = malloc(size + sizeof (size_t) + sizeof (BUGCHK_SIGN) * 2);
-
-    if (pRet == NULL) {
+    void *p = malloc(size);
+    if (!p) {
 	fprintf(stderr, "bugchk_malloc(size=%zd), can't allocate@%s(%d)\n",
 		size, file, line);
 	abort();
-    } else {
-	char *pMark = pRet;
-
-	*((BUGCHK_SIGN *)pMark) = BUGCHK_SIGN_VALUE;
-	pMark += sizeof (BUGCHK_SIGN);
-
-	*((size_t *)pMark) = size;
-	pMark += sizeof (size_t);
-	pRet = pMark;
-
-	pMark += size;
-	*((BUGCHK_SIGN *)pMark) = BUGCHK_SIGN_VALUE;
     }
-
-    return pRet;
+    return p;
 }
 
 void bugchk_free(void *ptr , int line, const char *file)
 {
-    int	ok = 0;
-
-    nFreeCnt++;
-
-    if (ptr == NULL || (unsigned long)ptr < 100UL) {
-	fprintf(stderr, "bugchk_free(ptr=%p)@%s(%d)\n", ptr, file, line);
-    } else {
-	char *pMark = (char *)ptr;
-
-	pMark -= (sizeof (size_t) + sizeof (BUGCHK_SIGN));
-	if (BUGCHK_SIGN_VALUE != *((BUGCHK_SIGN *)pMark)) {
-	    fprintf(stderr, "bugchk_free(ptr=%p), invalid"
-		    " begin-mark=0x%lx@%s(%d)\n", ptr, *((BUGCHK_SIGN *)pMark),
-		    file, line);
-	} else {
-	    size_t size;
-
-	    pMark += sizeof (BUGCHK_SIGN);
-
-	    size = *((size_t *)pMark);
-	    pMark += sizeof (size_t);
-
-	    pMark += size;
-	    if (BUGCHK_SIGN_VALUE != *((BUGCHK_SIGN *)pMark)) {
-		fprintf(stderr, "bugchk_free(ptr=%p),"
-			" invalid end-mark=0x%lx, size=%zd@%s(%d)\n",
-			ptr, *((BUGCHK_SIGN *)pMark), size, file, line);
-	    } else {
-		ok = 1;
-	    }
-	}
-    }
-
-    if (!ok) {
-	fflush(stderr);
-	abort();
-    }
+    free(ptr);  /* free(NULL) is valid C */
 }
 
 

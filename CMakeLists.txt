@@ -52,15 +52,21 @@ target_include_directories(sane-brother PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/libbrcolm
 	${SANE_INCLUDE_DIR}
 	${LIBUSB_INCLUDE_DIR})
-target_compile_definitions(sane-brother PRIVATE BACKEND_NAME=brother BRSANESUFFIX V_MAJOR=1 V_MINOR=0)
+target_compile_definitions(sane-brother PRIVATE BACKEND_NAME=brother BRSANESUFFIX=2 V_MAJOR=1 V_MINOR=0)
 target_link_libraries(sane-brother dl pthread usb ${LIBUSB_LIBRARIES} sane-brother-stubs)
 set_target_properties(sane-brother PROPERTIES SOVERSION 1)
+
+# BRSANESUFFIX=2 code loads libbrscandec2.so and libbrcolm2.so by name
+install(CODE "
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink libbrscandec.so \${CMAKE_INSTALL_PREFIX}/lib/libbrscandec2.so)
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink libbrcolm.so \${CMAKE_INSTALL_PREFIX}/lib/libbrcolm2.so)
+")
 
 add_executable(brsaneconfig
         brsaneconfig/brsaneconfig.c)
 target_include_directories(brsaneconfig PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/libsane-brother)
-target_compile_definitions(brsaneconfig PRIVATE BRSANESUFFIX)
+target_compile_definitions(brsaneconfig PRIVATE BRSANESUFFIX=2)
 target_link_libraries(brsaneconfig sane-brother)
 
 install(TARGETS brsaneconfig brscandec brcolm)
@@ -80,4 +86,8 @@ install(FILES libbrcolm/GrayCmData/BHMFB/brmfgray.bin DESTINATION /usr/share/san
 install(FILES libbrcolm/GrayCmData/ZLeFB/brlutcm.dat libbrcolm/GrayCmData/ZLeFB/brmfgray.bin DESTINATION /usr/share/sane/brother/GrayCmData/ZLeFB)
 
 install(FILES data/brsanenetdevice.cfg data/Brsane.ini DESTINATION /usr/share/sane/brother)
+# BRSANESUFFIX=2 looks for Brsane2.ini
+install(CODE "
+  execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink Brsane.ini \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/share/sane/brother/Brsane2.ini)
+")
 

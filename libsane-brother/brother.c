@@ -614,9 +614,11 @@ sane_open (SANE_String_Const devicename, SANE_Handle *handle)
     this->modelInf.index = pdev->modelInf.index;
 
     this->modelInf.seriesNo = pdev->modelInf.seriesNo;
-    // Workaround for DCP1510
+#if BRSANESUFFIX == 1
+    // Workaround for DCP1510 on BRSANESUFFIX==1
     if (this->modelInf.seriesNo == 14)
 	    this->modelInf.seriesNo = BHMINI_FB_ONLY;
+#endif
     this->modelInf.modelName = pdev->modelInf.modelName;
     this->modelInf.modelTypeName = pdev->modelInf.modelTypeName;
 
