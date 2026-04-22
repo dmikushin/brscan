@@ -564,7 +564,7 @@ StatusChk(char *lpBuff, int nDataSize)
 					length = 0;		// clear
 				else
 					// Acquire the information of raster data size
-					length = *(WORD *)( pt + 1 );	// format: [HEADER(1B)][LENGTH(intel 2B)][DATA...]
+					length = ((unsigned char)pt[1] << 8) | (unsigned char)pt[2]; // big-endian for brscan4 models
 
 				if( nDataSize < ( length + 3) ){	// length+3 = head(1B)+length(2B)+data(length)
 					break;
@@ -758,26 +758,73 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 	nHeadOnly=0;
 	nLength=0;
 
-	/* Dump first 40 raw bytes for protocol analysis */
-	if (wData > 0) {
-		char hexbuf[200]; int hi;
-		for(hi=0; hi<40 && hi<(int)wData; hi++)
-			sprintf(hexbuf+hi*3, "%02x ", (unsigned char)pt[hi]);
-		WriteLog("RAW[0..39]: %s", hexbuf);
-	}
-
 	dwRxTempBuffLength = wData;
 
+#if BRSANESUFFIX == 2
+	/*
+	 * DCP-1510 and similar brscan4 models (seriesNo >= MUST_CONVERT_MODEL)
+	 * use a different line format than the standard Brother protocol:
+	 *
+	 *   [42 07 00 01 00 84 00 00 00 00]  10-byte per-line wrapper
+	 *   [NN]                              1-byte compressed data length
+	 *   [00]                              1-byte padding/separator
+	 *   [NN bytes of packbits data]       compressed raster data
+	 *
+	 * Total per line: 12 + NN bytes.
+	 * Verified by hex dump analysis of raw USB data from DCP-1510.
+	 */
+	if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL) {
+		for (wDataLineCnt=0; wDataLineCnt < nFwTempBuffMaxLine;) {
+			/* Need at least 12 bytes: 10 wrapper + 1 length + 1 pad */
+			if (dwRxTempBuffLength < 12) break;
+
+			BYTE headch = (BYTE)*pt;
+			if ((char)headch < 0) {
+				/* Status/control code */
+				dwRxTempBuffLength--;
+				pt++;
+				wDataLineCnt += 3;
+				continue;
+			}
+			if (headch == 0) {
+				/* White line */
+				dwRxTempBuffLength -= 1;
+				pt += 1;
+				wDataLineCnt++;
+				nHeadOnly++;
+				continue;
+			}
+			if (headch != 0x42) {
+				/* Unknown header — stop parsing */
+				WriteLog("  brscan4 parser: unexpected header 0x%02x at remain=%lu", headch, (unsigned long)dwRxTempBuffLength);
+				break;
+			}
+
+			/* Skip 10-byte wrapper */
+			WORD clen = (unsigned char)pt[10];  /* 1-byte compressed length */
+			DWORD lineTotal = 12 + (DWORD)clen;
+
+			if (dwRxTempBuffLength < lineTotal) break;
+
+			nLength = lineTotal;
+			dwRxTempBuffLength -= lineTotal;
+			pt += lineTotal;
+			wDataLineCnt++;
+		}
+	} else
+#endif
+	{
+	/* Standard Brother line format: [header][2-byte LE length][data] */
 	for (wDataLineCnt=0; wDataLineCnt < nFwTempBuffMaxLine;){
 		BYTE headch;
 
-		if( dwRxTempBuffLength <= 0 )	break;	// All data can be processed (receive all of cluster)
+		if( dwRxTempBuffLength <= 0 )	break;
 
 		headch = (BYTE)*pt;
 		if ((char)headch < 0) {
 			// STATUS,CTRL code family
-			dwRxTempBuffLength --;			// spend 1 byte for CTRL code family
-			pt++;					// refer the next header information
+			dwRxTempBuffLength --;
+			pt++;
 			wDataLineCnt+=3;
 		}else{
 			if (headch == 0) {
@@ -793,17 +840,8 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 				if( dwRxTempBuffLength < 3 )
 					length = 0;		// clear
 				else{
-					// get the length information of raster data
-					length = *(WORD *)( pt + 1 );	// format: [HEADER(1B)][LENGTH(intel 2B)][DATA...]
-					/* DCP-1510 and similar models (seriesNo >= 10) send length
-					 * in big-endian. Detect and byte-swap if the LE value
-					 * exceeds available data but BE value doesn't. */
-					if (length + 3 > dwRxTempBuffLength) {
-						WORD length_be = ((length >> 8) & 0xFF) | ((length & 0xFF) << 8);
-						if (length_be + 3 <= dwRxTempBuffLength)
-							length = length_be;
-					}
-					nLength = length+3;   //05/07/31
+					length = *(WORD *)( pt + 1 );
+					nLength = length+3;
 				}
 				if (wDataLineCnt < 5) {
 					WriteLog("  LP2[%d] h=0x%02x len=%u rem=%lu max=%d",
@@ -823,6 +861,7 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 			}
 		}
 	} // end of for(;;)
+	} // end of else (standard parser)
 	wData -= dwRxTempBuffLength;	// take off the odd data (less than 1 line data)
 
 	//transfer the data to the RGB data for the specified models
@@ -863,7 +902,7 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 				unsigned char* pData;
 
 				// get the lenght-information of the raster data
-				length = *(WORD *)( lpOrg + 1 );	// format: [HEADER(1B)][LENGTH(intel 2B)][DATA...]
+				length = ((unsigned char)lpOrg[1] << 8) | (unsigned char)lpOrg[2]; // big-endian for brscan4 models
 				length += 3;
 				pData = (unsigned char *)lpOrg;
 
@@ -1269,7 +1308,7 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 					length = 0;		// �����
 				else
 					// �饹���ǡ���Ĺ�μ���
-					length = *(WORD *)( pt + 1 );	// format: [HEADER(1B)][LENGTH(intel 2B)][DATA...]
+					length = ((unsigned char)pt[1] << 8) | (unsigned char)pt[2]; // big-endian for brscan4 models
 
 				if (wDataLineCnt < 3) {
 					WriteLog("  LineParser[%d]: head=0x%02x len=%u remain=%lu pt=%02x %02x %02x %02x %02x %02x",
@@ -2054,22 +2093,50 @@ ProcessMain(Brother_Scanner *this, WORD wByte, WORD wDataLineCnt, char * lpFwBuf
 					lRealY++;
 					lpFwBuf += this->scanInfo.ScanAreaByte.lWidth;
 				}
+#if BRSANESUFFIX == 2
+			}else if( Header == 0x42 && this->modelInf.seriesNo >= MUST_CONVERT_MODEL ){
+				/*
+				 * brscan4 line format: [42 07 00 XX XX XX XX XX XX XX][NN][00][data]
+				 * Header 0x42 already consumed. lpScn points to byte 1 (0x07).
+				 * Skip remaining 9 wrapper bytes, read 1-byte length, skip padding.
+				 */
+				lpScn += 9;  /* skip to the length byte (byte 10 of original frame) */
+				count = (WORD)(unsigned char)*lpScn++;  /* 1-byte compressed length */
+				lpScn++;  /* skip 0x00 padding */
+				lpSrc = lpScn;
+				Dcount = count;
+
+				WriteLog( "Header=42(brscan4) Count=%4d", count );
+
+				if( lpFwBuf ){
+					SetupImgLineProc( 0x42 );  /* MONO PACKBITS */
+					ImgLineProcInfo.pLineData      = lpSrc;
+					ImgLineProcInfo.dwLineDataSize = count;
+					ImgLineProcInfo.pWriteBuff     = lpFwBuf;
+
+					dwWriteImageSize = this->scanDec.lpfnScanDecWrite( &ImgLineProcInfo, &nWriteLineCount );
+					WriteLog( "\tlpFwBuf = %X, WriteSize = %d, LineCount = %d, RealY = %d", lpFwBuf, dwWriteImageSize, nWriteLineCount, lRealY );
+
+					if( nWriteLineCount > 0 ){
+						*lpFwBufcnt += dwWriteImageSize;
+						lpFwBuf += dwWriteImageSize;
+						lRealY += nWriteLineCount;
+					}
+				}
+				lpScn += Dcount;
+#endif
 			}else{
 				//
-				//	Scanner data
+				//	Scanner data (standard format)
 				//
-				Dcount = (DWORD)*( (WORD *)lpScn );	// data length
-				count  = (WORD)Dcount;		// data length
+				Dcount = (DWORD)*( (WORD *)lpScn );	// data length (LE)
+				count  = (WORD)Dcount;
 				lpScn += 2;
 				lpSrc = lpScn;
 
 				WriteLog( "Header=%2x  Count=%4d", (BYTE)Header, count );
-				WriteLog( "\tlpFwBuf = %X, lpScn = %X", lpFwBuf, lpScn );
 
 				if( lpFwBuf ){
-					//
-					// set the valiables for the raster data expansion/ resolution exchanging
-					//
 					SetupImgLineProc( Header );
 					ImgLineProcInfo.pLineData      = lpSrc;
 					ImgLineProcInfo.dwLineDataSize = count;
