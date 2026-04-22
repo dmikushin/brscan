@@ -208,6 +208,7 @@ byte * FUN_001063f3(SCANDEC_WRITE *param_1,size_t *param_2)
   }
   else {
     if (param_1->nInDataComp == 3) {
+      memset(DAT_00208ef0, 0xFF, malloc_size); /* clear to white before packbits decode */
       local_30 = DAT_00208ef0;
       local_28 = DAT_00208ef0;
       local_48 = malloc_size;

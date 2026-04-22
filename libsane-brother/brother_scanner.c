@@ -806,6 +806,14 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 
 			if (dwRxTempBuffLength < lineTotal) break;
 
+			if (wDataLineCnt < 3) {
+				WriteLog("  brscan4 line[%d]: clen=%u total=%lu next=%02x %02x %02x",
+					wDataLineCnt, clen, (unsigned long)lineTotal,
+					(unsigned char)pt[lineTotal],
+					(unsigned char)pt[lineTotal+1],
+					(unsigned char)pt[lineTotal+2]);
+			}
+
 			nLength = lineTotal;
 			dwRxTempBuffLength -= lineTotal;
 			pt += lineTotal;
@@ -2113,6 +2121,9 @@ ProcessMain(Brother_Scanner *this, WORD wByte, WORD wDataLineCnt, char * lpFwBuf
 					ImgLineProcInfo.pLineData      = lpSrc;
 					ImgLineProcInfo.dwLineDataSize = count;
 					ImgLineProcInfo.pWriteBuff     = lpFwBuf;
+					/* Clear output line to white before decompression,
+					 * so any unfilled pixels are white, not stale data */
+					memset(lpFwBuf, 0xFF, this->scanInfo.ScanAreaByte.lWidth);
 
 					dwWriteImageSize = this->scanDec.lpfnScanDecWrite( &ImgLineProcInfo, &nWriteLineCount );
 					WriteLog( "\tlpFwBuf = %X, WriteSize = %d, LineCount = %d, RealY = %d", lpFwBuf, dwWriteImageSize, nWriteLineCount, lRealY );
