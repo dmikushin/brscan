@@ -47,55 +47,20 @@ jobs:
         uses: docker/setup-qemu-action@v3
 
       - name: Build inside ${{ matrix.platform }} container
+        env:
+          VERSION: ${{ steps.ref.outputs.version }}
+          ARCH: ${{ matrix.arch }}
         run: |
-          mkdir -p dist
           docker run --rm \
-            --platform ${{ matrix.platform }} \
+            --platform "${{ matrix.platform }}" \
+            -e VERSION \
+            -e ARCH \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
             -v "$PWD":/work \
             -w /work \
             debian:bookworm-slim \
-            bash -ec '
-              export DEBIAN_FRONTEND=noninteractive
-              apt-get update
-              apt-get install -y --no-install-recommends \
-                build-essential cmake pkg-config \
-                libsane-dev libusb-dev libjpeg-dev \
-                ca-certificates
-              rm -rf build
-              mkdir build && cd build
-              cmake -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release ..
-              cmake --build . -j"$(nproc)"
-              cd /work
-              VERSION="${{ steps.ref.outputs.version }}"
-              ARCH="${{ matrix.arch }}"
-              STAGE="brscan-${VERSION}-${ARCH}"
-              mkdir -p "dist/${STAGE}/lib/sane" "dist/${STAGE}/lib" "dist/${STAGE}/bin"
-              install -m 644 build/libsane-brother.so.1 "dist/${STAGE}/lib/sane/"
-              install -m 644 build/libbrscandec.so.1     "dist/${STAGE}/lib/"
-              install -m 644 build/libbrcolm.so.1        "dist/${STAGE}/lib/"
-              install -m 755 build/brsaneconfig          "dist/${STAGE}/bin/"
-              cp README.md Copying copying.brother copying.lib "dist/${STAGE}/" || true
-              cat > "dist/${STAGE}/INSTALL" <<EOF
-          Install (run as root):
-
-              install -m 644 lib/libbrscandec.so.1 /usr/lib/libbrscandec.so.1
-              install -m 644 lib/libbrcolm.so.1    /usr/lib/libbrcolm.so.1
-              install -m 644 lib/sane/libsane-brother.so.1 /usr/lib/sane/libsane-brother.so.1
-              ln -sf libbrscandec.so.1 /usr/lib/libbrscandec.so
-              ln -sf libbrscandec.so.1 /usr/lib/libbrscandec2.so
-              ln -sf libbrcolm.so.1    /usr/lib/libbrcolm.so
-              ln -sf libbrcolm.so.1    /usr/lib/libbrcolm2.so
-              ln -sf libsane-brother.so.1 /usr/lib/sane/libsane-brother.so
-              ldconfig
-              echo brother >> /etc/sane.d/dll.conf
-
-          Then add a udev rule (see README.md for details).
-          EOF
-              cd dist
-              tar czf "${STAGE}.tar.gz" "${STAGE}"
-              sha256sum "${STAGE}.tar.gz" > "${STAGE}.tar.gz.sha256"
-              ls -la
-            '
+            bash /work/scripts/build-release.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -104,6 +69,7 @@ jobs:
           path: |
             dist/brscan-*.tar.gz
             dist/brscan-*.tar.gz.sha256
+          if-no-files-found: error
 
   release:
     name: Publish GitHub Release
