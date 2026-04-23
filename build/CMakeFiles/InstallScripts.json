@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/home/marcusmae/forge/brscan/build/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

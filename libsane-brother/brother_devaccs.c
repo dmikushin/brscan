@@ -786,6 +786,7 @@ WriteDeviceData( usb_dev_handle *hScanner, LPSTR lpTxBuffer, int nWriteSize, int
 					 2000);
 	    if ( nResultSize >= 0) break;
 	}
+	WriteLog("WriteDeviceData: ep=0x%02x requested=%d returned=%d", nEndPoint, nWriteSize, nResultSize);
 
 	return nResultSize;
 }
@@ -922,22 +923,16 @@ int  usb_set_configuration_or_reset_toggle(
 
   errornum = usb_set_configuration(this->hScanner->usb, configuration);
 
-  /* Always clear halt on both bulk endpoints — not just the IN side, and
-   * not gated on the set_configuration return value. On Linux/libusb-0.1
-   * set_configuration typically returns 0 (no-op when cfg is already set),
-   * so the original conditional was dead code on every well-behaved run.
-   * Meanwhile the DCP-1510 leaves the IN endpoint's DATA toggle in a
-   * stuck state after a scan session closes, which manifests as "scanner
-   * accepts commands but delivers zero bytes" on the NEXT scan session.
-   * Clearing halt resets the DATA toggle. Also clearing OUT is cheap
-   * insurance. */
   in_ep = this->hScanner->usb_r_ep;
-  if (in_ep < 0x80 || in_ep > 0xff) in_ep = 0x85; /* DCP-1510 default */
-  usb_clear_halt(this->hScanner->usb, in_ep);
+  if (in_ep < 0x80 || in_ep > 0xff) in_ep = 0x85;
+  int rc_in = usb_clear_halt(this->hScanner->usb, in_ep);
 
   out_ep = this->hScanner->usb_w_ep;
-  if (out_ep < 0x01 || out_ep > 0x7f) out_ep = 0x04; /* DCP-1510 default */
-  usb_clear_halt(this->hScanner->usb, out_ep);
+  if (out_ep < 0x01 || out_ep > 0x7f) out_ep = 0x04;
+  int rc_out = usb_clear_halt(this->hScanner->usb, out_ep);
+
+  WriteLog("set_config_or_reset_toggle: set_cfg=%d clear_halt(IN=0x%02x)=%d clear_halt(OUT=0x%02x)=%d",
+           errornum, in_ep, rc_in, out_ep, rc_out);
 
   return errornum;
 }

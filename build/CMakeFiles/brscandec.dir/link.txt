@@ -1,1 +1,0 @@
-/usr/sbin/cc -fPIC -shared -Wl,--dependency-file=CMakeFiles/brscandec.dir/link.d -Wl,-soname,libbrscandec.so.1 -o libbrscandec.so.1 CMakeFiles/brscandec.dir/libbrscandec/brother_bugchk.c.o CMakeFiles/brscandec.dir/libbrscandec/brother_scandec.c.o CMakeFiles/brscandec.dir/libbrscandec/brother_chreso.c.o

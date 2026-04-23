@@ -1,1 +1,0 @@
-/usr/sbin/cc -Wl,--dependency-file=CMakeFiles/brsaneconfig.dir/link.d CMakeFiles/brsaneconfig.dir/brsaneconfig/brsaneconfig.c.o -o brsaneconfig  -Wl,-rpath,/home/marcusmae/forge/brscan/build: libsane-brother.so.1 -ldl -lpthread -lusb /usr/lib/libusb-1.0.so /usr/lib/libjpeg.so
