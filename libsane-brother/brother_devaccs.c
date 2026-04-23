@@ -904,7 +904,13 @@ FreeReceiveBuffer( void )
 //    Try to set configuration
 //
 //    if false, send the CLEAR_FEATURE request
-//       in order to reset the data toggle statement.
+//       in order to reset the data toggle statement on the scan-data
+//       (bulk IN) endpoint. Reference libsane-brother4.so at
+//       usb_set_configuration_or_reset_toggle (0xe5f0) clears halt on
+//       the scanner's bulk IN endpoint, not the OUT — an ancient bug
+//       in this open-source port had it the other way round, which
+//       left the IN endpoint's data toggle stuck after every scan and
+//       caused the scanner to deliver zero bytes on subsequent scans.
 //
 //    M-LNX-24   2006/04/12 kado
 
@@ -915,12 +921,12 @@ int  usb_set_configuration_or_reset_toggle(
 
   errornum = usb_set_configuration(this->hScanner->usb, configuration);
   if(errornum){
-    nEndPoint = this->hScanner->usb_w_ep;
-    if(nEndPoint <  0x1 || nEndPoint > 0x7f){
-      nEndPoint = 0x03;
+    nEndPoint = this->hScanner->usb_r_ep;
+    if(nEndPoint <  0x80 || nEndPoint > 0xff){
+      nEndPoint = 0x84;
       for(i=0; i < ANOTHERENDPOINT; i++){
 	if(this->modelInf.seriesNo  == ChangeEndpoint[i]){
-	  nEndPoint = 0x04;
+	  nEndPoint = 0x85;
 	  break;
 	}
       }
