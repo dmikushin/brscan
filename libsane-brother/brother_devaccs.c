@@ -368,6 +368,17 @@ CloseDevice( usb_dev_handle *hScanner )
      * session attempt, leaving BCOMMAND_RETURN=0x80 set on next OpenDevice
      * (requires physical power cycle to clear). */
     usb_release_interface(hScanner->usb, 1);
+
+    /* DCP-1510 firmware needs ~2 s after BREQ_GET_CLOSE+release to
+     * fully reset its internal session state. Empirically: 0 s delay
+     * between scanimage invocations hangs the next session with zero
+     * bytes on the bulk IN endpoint; 1 s sometimes works; 2 s reliably
+     * works. Burn the latency here (inside the driver) rather than
+     * requiring every SANE frontend to know about it. The sleep runs
+     * after usb_release_interface so the kernel USB stack also has
+     * time to tear down its endpoint state before the next open. */
+    usleep(2000 * 1000);
+
 #ifdef SKEY_USBSEM
     release_usb_criticalsection();
     discard_usb_criticalsection();
