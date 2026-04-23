@@ -582,7 +582,13 @@ StatusChk(char *lpBuff, int nDataSize)
 	return rc;
 }
 
-#define READ_TIMEOUT 5*60*1000 // 5 minute
+/* Per-bulk-read timeout for scan data. Only fires when the scanner
+ * stops sending mid-scan; normally each chunk arrives in < 100 ms
+ * while data flows. 20 s is safely above the worst-case scanner
+ * start-of-scan delay (~6–8 s physical warmup) yet short enough to
+ * break out of a hung scan without keeping the kiosk client waiting
+ * for minutes. */
+#define READ_TIMEOUT 20*1000
 
 #define NO39_DEBUG
 
@@ -1181,13 +1187,28 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 		memmove( lpRxTempBuff, lpRxBuff+wProcessSize, dwRxTempBuffLength );	// Keep the rest data
 	}
 
-	/* Fallback EOF detection: if the scanner completed the scan but the
-	 * 0x80 Page-End status byte was lost in transit (or for models that
-	 * do not send one), force SCAN_EOF once all expected lines arrived.
-	 * The proper EOF path is via ProcessMain seeing a 0x80 status byte
-	 * in the data stream (see brscan4 pre-parser above). */
-	if (nAnswer == SCAN_GOOD && lRealY >= this->scanInfo.ScanAreaSize.lHeight) {
-		WriteLog("  brscan4: all %ld lines received, forcing EOF (fallback)", (long)lRealY);
+	/* Fallback EOF detection. Two scenarios handled here:
+	 *
+	 *   (a) Scanner delivered all expected lines but the 0x80 Page-End
+	 *       status byte was lost / never sent. Detect by lRealY having
+	 *       caught up to ScanAreaSize.lHeight.
+	 *
+	 *   (b) Scanner delivered partial data and stopped (firmware quirk
+	 *       observed on DCP-1510 on back-to-back scans — it sometimes
+	 *       ships ~184/196 lines and goes silent). Detect by the USB
+	 *       read loop having given up (bReadbufEnd=TRUE) while at least
+	 *       some lines arrived (lRealY > 0). Better to deliver a partial
+	 *       image than hang forever.
+	 *
+	 * Either way the proper EOF path is via ProcessMain seeing a 0x80
+	 * status byte in the data stream (see brscan4 pre-parser above);
+	 * this branch only fires when that signal is missing. */
+	if (nAnswer == SCAN_GOOD && lRealY > 0 &&
+	    (lRealY >= this->scanInfo.ScanAreaSize.lHeight ||
+	     this->scanState.bReadbufEnd)) {
+		WriteLog("  brscan4: forcing EOF fallback (lRealY=%ld / lHeight=%ld, bReadbufEnd=%d)",
+			(long)lRealY, (long)this->scanInfo.ScanAreaSize.lHeight,
+			this->scanState.bReadbufEnd ? 1 : 0);
 		this->scanState.bReadbufEnd = TRUE;
 		nAnswer = SCAN_EOF;
 	}
