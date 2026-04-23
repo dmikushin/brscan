@@ -6,6 +6,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 find_package(Sane REQUIRED)
 find_package(LibUSB REQUIRED)
+find_package(JPEG REQUIRED)
 
 add_library(brscandec SHARED
 	libbrscandec/brother_bugchk.c
@@ -29,6 +30,7 @@ add_library(sane-brother SHARED
 	libsane-brother/brother_advini.c
 	libsane-brother/brother_bugchk.c
 	libsane-brother/brother_cmatch.c
+	libsane-brother/brother_color.c
 	libsane-brother/brother_devaccs.c
 	libsane-brother/brother_devinfo.c
 	libsane-brother/brother_log.c
@@ -51,9 +53,10 @@ target_include_directories(sane-brother PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/libbrscandec
 	${CMAKE_CURRENT_SOURCE_DIR}/libbrcolm
 	${SANE_INCLUDE_DIR}
-	${LIBUSB_INCLUDE_DIR})
+	${LIBUSB_INCLUDE_DIR}
+	${JPEG_INCLUDE_DIRS})
 target_compile_definitions(sane-brother PRIVATE BACKEND_NAME=brother BRSANESUFFIX=2 V_MAJOR=1 V_MINOR=0)
-target_link_libraries(sane-brother dl pthread usb ${LIBUSB_LIBRARIES} sane-brother-stubs)
+target_link_libraries(sane-brother dl pthread usb ${LIBUSB_LIBRARIES} ${JPEG_LIBRARIES} sane-brother-stubs)
 set_target_properties(sane-brother PROPERTIES SOVERSION 1)
 
 # BRSANESUFFIX=2 code loads libbrscandec2.so and libbrcolm2.so by name

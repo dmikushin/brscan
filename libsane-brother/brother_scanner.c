@@ -51,6 +51,7 @@
 #include "brother_bugchk.h"
 
 #include "brother_scanner.h"
+#include "brother_color.h"
 
 #ifdef NO39_DEBUG
 #include <sys/time.h>
@@ -594,6 +595,175 @@ static struct timezone save_tz;		// Valiable for time-interval information(min)
 
 
 #if       BRSANESUFFIX == 2
+
+/******************************************************************************
+ *  PageScanColor — 24-bit color (JPEG) scan path for brscan4 models.
+ *
+ *  Unlike mono packbits, the scanner sends a single contiguous JPEG stream
+ *  framed in per-block wrappers. We collect the full JPEG into a temp file,
+ *  then libjpeg-decode scanlines into the SANE output buffer.
+ *
+ *  Block wire format (empirical, per reference make_cache_block RE):
+ *    [hdr_byte < 0x80][len_lo][len_hi][len bytes of JPEG payload]
+ *  Status bytes (>= 0x80) terminate the JPEG stream:
+ *    0x80 Page End, 0x81 NextPage, 0x82/0x86 page-boundary,
+ *    0x83/0xE3 Cancel, 0x84/0x85 Duplex sync (skip 2 bytes and continue).
+ *
+ *  On first entry for a page the temp file is created; subsequent calls
+ *  continue collecting until a status byte is seen, then switch to
+ *  decoding and stream scanlines until output_height is reached.
+ ******************************************************************************/
+#define COLOR_RXBUF_SIZE 131072
+static char g_colorResidue[COLOR_RXBUF_SIZE];
+static int  g_colorResidueLen = 0;
+static int  g_colorBlocksSeen = 0;
+
+static int
+PageScanColor( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
+{
+	int rc;
+	*lpFwLen = 0;
+
+	if (this->scanState.bCanceled) {
+		brother_color_cleanup();
+		g_colorResidueLen = 0;
+		g_colorBlocksSeen = 0;
+		this->scanState.bScanning = FALSE;
+		this->scanState.bCanceled = FALSE;
+		return SANE_STATUS_CANCELLED;
+	}
+
+	ColorScanPhase phase = brother_color_phase();
+
+	if (phase == COLOR_SCAN_IDLE) {
+		if (brother_color_begin_page(this->scanState.nPageCnt + 1) != 0)
+			return SANE_STATUS_NO_MEM;
+		g_colorResidueLen = 0;
+		g_colorBlocksSeen = 0;
+		phase = COLOR_SCAN_COLLECTING;
+	}
+
+	/* -- COLLECTING: read USB, parse blocks, append payload -- */
+	while (phase == COLOR_SCAN_COLLECTING) {
+		int space = COLOR_RXBUF_SIZE - g_colorResidueLen;
+		if (space <= 0) {
+			WriteLog("  color: residue buffer full, forcing decode");
+			brother_color_begin_decode();
+			phase = brother_color_phase();
+			break;
+		}
+		int nread = ReadNonFixedData(this->hScanner,
+			g_colorResidue + g_colorResidueLen, space,
+			READ_TIMEOUT, this->modelInf.seriesNo);
+		if (nread < 0) {
+			WriteLog("  color: USB read error rc=%d — force decode", nread);
+			brother_color_begin_decode();
+			phase = brother_color_phase();
+			break;
+		}
+		g_colorResidueLen += nread;
+
+		int i = 0;
+		int saw_terminator = 0;
+		while (i < g_colorResidueLen) {
+			unsigned char h = (unsigned char)g_colorResidue[i];
+			if (h >= 0x80) {
+				/* Duplex sync: 2-byte marker, skip */
+				if (h == 0x84 || h == 0x85) {
+					if (g_colorResidueLen - i < 2) break;
+					WriteLog("  color: duplex sync 0x%02x", h);
+					i += 2;
+					continue;
+				}
+				/* Any other status byte = end of JPEG stream */
+				WriteLog("  color: terminator 0x%02x after %d blocks (%d residue)",
+					h, g_colorBlocksSeen, g_colorResidueLen - i - 1);
+				i++;
+				saw_terminator = 1;
+				break;
+			}
+			/* Data block [hdr][len_lo][len_hi][payload] */
+			if (g_colorResidueLen - i < 3) break;
+			int clen = (unsigned char)g_colorResidue[i+1]
+				| ((unsigned char)g_colorResidue[i+2] << 8);
+			int block_total = 3 + clen;
+			if (g_colorResidueLen - i < block_total) break;
+			if (g_colorBlocksSeen < 3) {
+				unsigned char *p = (unsigned char *)&g_colorResidue[i+3];
+				WriteLog("  color block[%d] hdr=0x%02x clen=%d payload[0..7]=%02x %02x %02x %02x %02x %02x %02x %02x",
+					g_colorBlocksSeen, h, clen,
+					clen>0?p[0]:0, clen>1?p[1]:0, clen>2?p[2]:0, clen>3?p[3]:0,
+					clen>4?p[4]:0, clen>5?p[5]:0, clen>6?p[6]:0, clen>7?p[7]:0);
+			}
+			if (brother_color_append_payload(&g_colorResidue[i+3], clen) != 0) {
+				brother_color_cleanup();
+				g_colorResidueLen = 0;
+				this->scanState.bScanning = FALSE;
+				return SANE_STATUS_IO_ERROR;
+			}
+			g_colorBlocksSeen++;
+			i += block_total;
+		}
+		/* Shift unparsed residue */
+		if (i > 0 && i < g_colorResidueLen) {
+			memmove(g_colorResidue, g_colorResidue + i, g_colorResidueLen - i);
+		}
+		g_colorResidueLen -= i;
+
+		if (saw_terminator) {
+			if (brother_color_begin_decode() != 0) {
+				brother_color_cleanup();
+				g_colorResidueLen = 0;
+				this->scanState.bScanning = FALSE;
+				return SANE_STATUS_IO_ERROR;
+			}
+			phase = brother_color_phase();
+			break;
+		}
+		/* else: need more USB data; loop back to ReadNonFixedData */
+	}
+
+	/* -- DECODING: stream scanlines -- */
+	if (phase == COLOR_SCAN_DECODING) {
+		rc = brother_color_read_scanlines(lpFwBuf, nMaxLen);
+		if (rc < 0) {
+			brother_color_cleanup();
+			g_colorResidueLen = 0;
+			this->scanState.bScanning = FALSE;
+			return SANE_STATUS_IO_ERROR;
+		}
+		*lpFwLen = rc;
+		phase = brother_color_phase();
+		if (phase == COLOR_SCAN_DONE) {
+			this->scanState.bEOF = TRUE;
+			brother_color_cleanup();
+			g_colorResidueLen = 0;
+			g_colorBlocksSeen = 0;
+			if (rc > 0) {
+				/* Data this call; next call gets EOF with lpFwLen=0. */
+				return SANE_STATUS_GOOD;
+			}
+			this->scanState.bScanning = FALSE;
+			return SANE_STATUS_EOF;
+		}
+		return SANE_STATUS_GOOD;
+	}
+
+	if (phase == COLOR_SCAN_DONE) {
+		brother_color_cleanup();
+		g_colorResidueLen = 0;
+		this->scanState.bEOF = TRUE;
+		this->scanState.bScanning = FALSE;
+		return SANE_STATUS_EOF;
+	}
+
+	/* ERROR */
+	brother_color_cleanup();
+	g_colorResidueLen = 0;
+	this->scanState.bScanning = FALSE;
+	return SANE_STATUS_IO_ERROR;
+}
+
 /******************************************************************************
  *									      *
  *	FUNCTION	PageScan					      *
@@ -644,6 +814,14 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 		this->scanState.nPageCnt = 0;
 
 		return rc;
+	}
+
+	/* brscan4 + 24-bit color: scanner sends a JPEG stream, not packbits.
+	 * Route to the dedicated libjpeg-based path that bypasses ProcessMain. */
+	if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL &&
+	    (this->devScanInfo.wColorType == COLOR_FUL ||
+	     this->devScanInfo.wColorType == COLOR_FUL_NOCM)) {
+		return PageScanColor(this, lpFwBuf, nMaxLen, lpFwLen);
 	}
 
 	nPageScanCnt++;
@@ -1718,6 +1896,10 @@ ScanEnd( Brother_Scanner *this )
 {
     this->scanState.nPageCnt = 0;
     bTxScanCmd = FALSE;		// Clear the begining-of-scan flag
+
+    /* Release color-scan temp file / libjpeg state if a color scan was
+     * in progress. Safe no-op if not. */
+    brother_color_cleanup();
 
 #ifndef DEBUG_No39
     if ( this->hScanner != NULL ) {
