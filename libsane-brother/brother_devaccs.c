@@ -921,6 +921,21 @@ int  usb_set_configuration_or_reset_toggle(
   int errornum;
   int in_ep, out_ep;
 
+  /* Detach the kernel usblp driver from interface 0 (printer class).
+   * Without this, usb_set_configuration returns -EBUSY because the
+   * kernel has claimed one of the device's interfaces and USB spec
+   * forbids config changes while any interface is claimed. The
+   * symptom observed on DCP-1510: first scan after power-on works
+   * (usblp hasn't bound yet), every subsequent scan gets zero bytes
+   * from the scanner (set_configuration/clear_halt silently fail to
+   * reset endpoint state). Also detach interface 1 in case anything
+   * else has it. usb_detach_kernel_driver_np returns -ENODATA when
+   * no driver was bound — that's fine. */
+#ifdef LIBUSB_HAS_DETACH_KERNEL_DRIVER_NP
+  usb_detach_kernel_driver_np(this->hScanner->usb, 0);
+  usb_detach_kernel_driver_np(this->hScanner->usb, 1);
+#endif
+
   errornum = usb_set_configuration(this->hScanner->usb, configuration);
 
   in_ep = this->hScanner->usb_r_ep;
