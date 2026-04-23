@@ -782,17 +782,33 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 	 */
 	if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL) {
 		for (wDataLineCnt=0; wDataLineCnt < nFwTempBuffMaxLine;) {
-			/* Need at least 12 bytes: 10 wrapper + 2 length */
-			if (dwRxTempBuffLength < 12) break;
+			if (dwRxTempBuffLength == 0) break;
 
 			BYTE headch = (BYTE)*pt;
+
+			/* brscan4 sends bare 1-byte status codes between frames
+			 * (0x80 = Page End, 0x81 = NextPage, 0x83/0xE3 = Cancel,
+			 *  0x84/0x85 = Duplex sync). Handle BEFORE the 12-byte
+			 * data-frame guard so a trailing status byte isn't stuck
+			 * in the residue buffer forever.
+			 *
+			 * We leave the status byte in place (count it as one line)
+			 * and break pre-parsing — ProcessMain's GetStatusCode() will
+			 * see it on iteration `wDataLineCnt-1` and return SCAN_EOF /
+			 * SCAN_MPS / SCAN_CANCEL, which triggers the ScanDecPageEnd
+			 * flush path in the caller. */
 			if ((signed char)headch < 0) {
-				/* Status/control code */
+				WriteLog("  brscan4: status byte 0x%02x at line %d, stopping pre-parse",
+					headch, wDataLineCnt);
 				dwRxTempBuffLength--;
 				pt++;
-				wDataLineCnt += 3;
-				continue;
+				wDataLineCnt++;
+				break;
 			}
+
+			/* Need at least 12 bytes for a data frame: 10 wrapper + 2 length */
+			if (dwRxTempBuffLength < 12) break;
+
 			if (headch == 0) {
 				/* White line */
 				dwRxTempBuffLength -= 1;
@@ -987,10 +1003,14 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 		memmove( lpRxTempBuff, lpRxBuff+wProcessSize, dwRxTempBuffLength );	// Keep the rest data
 	}
 
-	/* DCP-1510 (brscan4) does not send an EOF status byte.
-	 * Detect scan completion by checking if all expected lines arrived. */
+	/* Fallback EOF detection: if the scanner completed the scan but the
+	 * 0x80 Page-End status byte was lost in transit (or for models that
+	 * do not send one), force SCAN_EOF once all expected lines arrived.
+	 * The proper EOF path is via ProcessMain seeing a 0x80 status byte
+	 * in the data stream (see brscan4 pre-parser above). */
 	if (nAnswer == SCAN_GOOD && lRealY >= this->scanInfo.ScanAreaSize.lHeight) {
-		WriteLog("  brscan4: all %ld lines received, forcing EOF", (long)lRealY);
+		WriteLog("  brscan4: all %ld lines received, forcing EOF (fallback)", (long)lRealY);
+		this->scanState.bReadbufEnd = TRUE;
 		nAnswer = SCAN_EOF;
 	}
 
