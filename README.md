@@ -12,12 +12,13 @@ The original Brother distribution shipped two **proprietary x86-64 binary blobs*
 
 - **libbrscandec** (scan decoder / resolution changer) — fixed from Ghidra decompilation by verifying every exported function against the original disassembly. Fixed 6 classes of Ghidra decompilation errors. Verified byte-for-byte (6/6 tests across same-reso, upscale, downscale, B&W, color modes).
 
-Additionally, the **DCP-1510 scan protocol** (brscan4) was reverse-engineered:
+Additionally, the **DCP-1510 scan protocol** (brscan4) was reverse-engineered from `libsane-brother4.so.1.0.7`:
 
-- Proprietary per-line framing: `[10-byte wrapper][2-byte LE length][packbits data]`
-- Big-endian length fields in line parser for newer models
-- USB endpoint mapping (EP 0x85 IN / EP 0x04 OUT)
-- I-command response parsing with variable-length headers
+- **Mono packbits** wire format: `[10-byte wrapper][2-byte LE length][packbits data]`, with the per-block 1-byte status code (`0x80` Page End, `0x81` NextPage, `0x83`/`0xE3` Cancel) appearing inline between frames.
+- **24-bit Color** is a single **baseline JPEG stream** framed into per-block wrappers. The driver stages the payload to a temp file and decodes via libjpeg with `out_color_space = JCS_RGB`.
+- **EOF detection** propagates the in-stream `0x80` byte to `ProcessMain`'s `GetStatusCode` path so `SCAN_EOF` is raised cleanly (replacing the prior heuristic that lost trailing scanlines).
+- **USB session teardown** mirrors the reference `CloseDevice` exactly — `BREQ_GET_CLOSE` then `usb_release_interface(1)`, with no stray `usb_set_altinterface(0)` between them. This eliminates the firmware-side `BCOMMAND_RETURN=0x80` that previously required a power cycle between scans.
+- USB endpoint mapping (EP 0x85 IN / EP 0x04 OUT) and I-command response parsing with variable-length headers.
 
 ## Supported Models
 
@@ -26,7 +27,7 @@ Tested on **Brother DCP-1510**. Should work on other Brother MFC/DCP models list
 ## Prerequisites
 
 ```
-sudo apt install libsane-dev libusb-dev pkg-config cmake gcc
+sudo apt install libsane-dev libusb-dev libjpeg-dev pkg-config cmake gcc
 ```
 
 ## Building & Installing
@@ -39,6 +40,8 @@ make -j4
 sudo make install
 sudo sh -c "echo brother >> /etc/sane.d/dll.conf"
 ```
+
+Pre-built binaries for amd64, arm64, and armv7 are published as GitHub releases — see [Releases](https://github.com/dmikushin/brscan/releases).
 
 ## USB Permissions
 
@@ -71,9 +74,15 @@ Scan a full A4 page in grayscale:
 scanimage --mode "True Gray" --resolution 200 -x 210 -y 297 --format=pnm > scan.pnm
 ```
 
+Scan a full A4 page in 24-bit color:
+
+```
+scanimage --mode "24bit Color" --resolution 200 -x 210 -y 297 --format=pnm > color.pnm
+```
+
 Available scan modes: `Black & White`, `Gray[Error Diffusion]`, `True Gray`, `24bit Color`
 
-## Integration Tests
+## Tests
 
 ```
 cd build
@@ -82,7 +91,7 @@ gcc -o test_integration ../tests/test_integration.c -ldl -lm
 # === Results: 65 passed, 0 failed ===
 ```
 
-Tests cover: brscan4 frame structure, packbits decompression (including ARM `signed char` edge cases), ScanDecOpen parameter computation, full decode pipeline, and color matching.
+Tests cover: brscan4 frame structure, packbits decompression (including ARM `signed char` edge cases), ScanDecOpen parameter computation, full decode pipeline, color matching, and end-to-end JPEG color decode (`tests/test_color_jpeg.c`).
 
 ## Debug Logging
 
@@ -92,17 +101,13 @@ Set `BROTHER_DEBUG=1` to enable verbose logging to stderr:
 BROTHER_DEBUG=1 scanimage --mode "True Gray" --resolution 200 -x 210 -y 297 > scan.pnm
 ```
 
-## Known Limitations
-
-- The scanner session must be fresh (power cycle between scans if `sane_open` returns "Invalid argument" — the USB control message shows `BCOMMAND_RETURN`)
-- `scanimage` exits with timeout (exit 124) because the driver doesn't yet detect the EOF status byte from the scanner; the scan data is complete
-
 ## Architecture
 
 ```
 libsane-brother.so.1    SANE backend (talks USB, parses scan protocol)
   ├── libbrscandec.so.1  Scan decoder: packbits decompression, resolution scaling
-  └── libbrcolm.so.1     Color matching: 3D LUT interpolation from .dat/.cm files
+  ├── libbrcolm.so.1     Color matching: 3D LUT interpolation from .dat/.cm files
+  └── libjpeg            24-bit color decode (JPEG-over-USB for brscan4)
 ```
 
 ## License

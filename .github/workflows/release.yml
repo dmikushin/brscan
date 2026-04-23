@@ -1,0 +1,141 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.0.0). Must already exist.'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
+          - arch: armv7
+            platform: linux/arm/v7
+    steps:
+      - name: Resolve ref
+        id: ref
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "ref=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "version=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
+            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build inside ${{ matrix.platform }} container
+        run: |
+          mkdir -p dist
+          docker run --rm \
+            --platform ${{ matrix.platform }} \
+            -v "$PWD":/work \
+            -w /work \
+            debian:bookworm-slim \
+            bash -ec '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential cmake pkg-config \
+                libsane-dev libusb-dev libjpeg-dev \
+                ca-certificates
+              rm -rf build
+              mkdir build && cd build
+              cmake -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Release ..
+              cmake --build . -j"$(nproc)"
+              cd /work
+              VERSION="${{ steps.ref.outputs.version }}"
+              ARCH="${{ matrix.arch }}"
+              STAGE="brscan-${VERSION}-${ARCH}"
+              mkdir -p "dist/${STAGE}/lib/sane" "dist/${STAGE}/lib" "dist/${STAGE}/bin"
+              install -m 644 build/libsane-brother.so.1 "dist/${STAGE}/lib/sane/"
+              install -m 644 build/libbrscandec.so.1     "dist/${STAGE}/lib/"
+              install -m 644 build/libbrcolm.so.1        "dist/${STAGE}/lib/"
+              install -m 755 build/brsaneconfig          "dist/${STAGE}/bin/"
+              cp README.md Copying copying.brother copying.lib "dist/${STAGE}/" || true
+              cat > "dist/${STAGE}/INSTALL" <<EOF
+          Install (run as root):
+
+              install -m 644 lib/libbrscandec.so.1 /usr/lib/libbrscandec.so.1
+              install -m 644 lib/libbrcolm.so.1    /usr/lib/libbrcolm.so.1
+              install -m 644 lib/sane/libsane-brother.so.1 /usr/lib/sane/libsane-brother.so.1
+              ln -sf libbrscandec.so.1 /usr/lib/libbrscandec.so
+              ln -sf libbrscandec.so.1 /usr/lib/libbrscandec2.so
+              ln -sf libbrcolm.so.1    /usr/lib/libbrcolm.so
+              ln -sf libbrcolm.so.1    /usr/lib/libbrcolm2.so
+              ln -sf libsane-brother.so.1 /usr/lib/sane/libsane-brother.so
+              ldconfig
+              echo brother >> /etc/sane.d/dll.conf
+
+          Then add a udev rule (see README.md for details).
+          EOF
+              cd dist
+              tar czf "${STAGE}.tar.gz" "${STAGE}"
+              sha256sum "${STAGE}.tar.gz" > "${STAGE}.tar.gz.sha256"
+              ls -la
+            '
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: brscan-${{ matrix.arch }}
+          path: |
+            dist/brscan-*.tar.gz
+            dist/brscan-*.tar.gz.sha256
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: ref
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Flatten artifact tree
+        run: |
+          mkdir -p release
+          find dist -type f \( -name '*.tar.gz' -o -name '*.sha256' \) -exec cp -v {} release/ \;
+          ls -la release
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ref.outputs.tag }}
+          name: ${{ steps.ref.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            release/*.tar.gz
+            release/*.tar.gz.sha256
