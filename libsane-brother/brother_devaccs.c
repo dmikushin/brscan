@@ -359,6 +359,15 @@ CloseDevice( usb_dev_handle *hScanner )
 	    );
 	if (rc >= 0) break;
     }
+    /* Release the USB interface here — mirrors reference libsane-brother4.so
+     * CloseDevice (0xdd58) which calls usb_release_interface(usb, 1) AFTER
+     * the BREQ_GET_CLOSE control message, BEFORE the caller's usb_close.
+     * Callers must NOT issue usb_set_altinterface(usb, 0) or release the
+     * interface separately — any extra SET_INTERFACE between the control
+     * close-msg and release is interpreted by Brother firmware as a new
+     * session attempt, leaving BCOMMAND_RETURN=0x80 set on next OpenDevice
+     * (requires physical power cycle to clear). */
+    usb_release_interface(hScanner->usb, 1);
 #ifdef SKEY_USBSEM
     release_usb_criticalsection();
     discard_usb_criticalsection();

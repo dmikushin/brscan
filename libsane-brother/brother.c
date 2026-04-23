@@ -647,14 +647,11 @@ sane_open (SANE_String_Const devicename, SANE_Handle *handle)
 #ifndef DEBUG_No39
     if (IFTYPE_USB == this->hScanner->device){       //check i/f
 	if(this->hScanner->usb){
+	    /* CloseDevice handles both the BREQ_GET_CLOSE control msg
+	     * and usb_release_interface(1) internally — matching the
+	     * reference libsane-brother4 ScanEnd sequence. */
 	    CloseDevice(this->hScanner);
-
-	    int res = usb_set_altinterface(this->hScanner->usb, 0);
-	    if (res) fprintf(stderr, "%s: usb_set_altinterface()"
-			     " complains %s\n", __func__, usb_strerror());
-
-	    usb_release_interface(this->hScanner->usb, 1); //   USB
-	    usb_close(this->hScanner->usb);                //   USB
+	    usb_close(this->hScanner->usb);
 	    this->hScanner->usb = NULL;
 	}
     } else {
@@ -694,35 +691,21 @@ sane_close (SANE_Handle handle)
   WriteLog( "<<< sane_close start >>> " );
   if (this->hScanner)
     {
-      if (this->scanState.bScanning)
-	ScanEnd( this );
+      /* Always call ScanEnd — it's idempotent (guarded by hScanner->usb
+       * being non-NULL) and handles BREQ_GET_CLOSE + release_interface +
+       * usb_close in the right order. Without this, a scan that ended via
+       * sane_read EOF (without sane_cancel) would leave the USB handle
+       * open and the scanner in BCOMMAND_RETURN state. */
+      ScanEnd( this );
 
       FreeGrayTable( this );
       FreeColorMatchDll( this );
       FreeScanDecDll( this );
 
-#ifdef DEBUG_No39
-      if (IFTYPE_USB == this->hScanner->device){
-	if(this->hScanner->usb){
-	  CloseDevice(this->hScanner);
-
-	  int res = usb_set_altinterface(this->hScanner->usb, 0);
-	  if (res) fprintf(stderr, "%s: usb_set_altinterface()"
-			   " complains %s\n", __func__, usb_strerror());
-
-	  usb_release_interface(this->hScanner->usb, 1);
-	  usb_close(this->hScanner->usb);
-	}
+      if ( this->hScanner ) {
+	free(this->hScanner);
+	this->hScanner = NULL;
       }
-      else{
-	if(this->hScanner->net){
-	  CloseDevice(this->hScanner);
-	  this->hScanner->net = NULL;
-	}
-      }
-      free(this->hScanner);
-      this->hScanner = NULL;
-#endif
     }
 
   if (scanModeList)

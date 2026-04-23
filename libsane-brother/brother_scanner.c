@@ -1724,13 +1724,12 @@ ScanEnd( Brother_Scanner *this )
 
 	if (IFTYPE_USB == this->hScanner->device){
 	    if (this->hScanner->usb){
+		/* Reference ScanEnd (libsane-brother4.so @0x15578) sequence:
+		 *   CloseDevice() → internally does control-msg + release_interface
+		 *   usb_close()
+		 * No usb_set_altinterface(0) — that extra SET_INTERFACE was
+		 * causing BCOMMAND_RETURN=0x80 to stick across sessions. */
 		CloseDevice(this->hScanner);
-
-		int res = usb_set_altinterface(this->hScanner->usb, 0);
-		if (res) fprintf(stderr, "%s: usb_set_altinterface()"
-				 " complains %s\n", __func__, usb_strerror());
-
-		usb_release_interface(this->hScanner->usb, 1);
 		usb_close(this->hScanner->usb);
 		this->hScanner->usb = NULL;
 	    }
