@@ -1,0 +1,1 @@
+/usr/sbin/cc -fPIC -shared -Wl,--dependency-file=CMakeFiles/brcolm.dir/link.d -Wl,-soname,libbrcolm.so.1 -o libbrcolm.so.1 CMakeFiles/brcolm.dir/libbrcolm/brcolm.c.o

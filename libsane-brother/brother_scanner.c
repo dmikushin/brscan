@@ -1187,7 +1187,7 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 		memmove( lpRxTempBuff, lpRxBuff+wProcessSize, dwRxTempBuffLength );	// Keep the rest data
 	}
 
-	/* Fallback EOF detection. Two scenarios handled here:
+	/* Fallback EOF / error detection. Scenarios handled here:
 	 *
 	 *   (a) Scanner delivered all expected lines but the 0x80 Page-End
 	 *       status byte was lost / never sent. Detect by lRealY having
@@ -1200,9 +1200,13 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 	 *       some lines arrived (lRealY > 0). Better to deliver a partial
 	 *       image than hang forever.
 	 *
-	 * Either way the proper EOF path is via ProcessMain seeing a 0x80
-	 * status byte in the data stream (see brscan4 pre-parser above);
-	 * this branch only fires when that signal is missing. */
+	 *   (c) Scanner accepted the scan command but never sent any data
+	 *       (bReadbufEnd=TRUE and lRealY == 0). Report IO error rather
+	 *       than loop sane_read forever with *lpFwLen=0.
+	 *
+	 * The primary EOF path remains via ProcessMain seeing a 0x80 status
+	 * byte in the data stream (see brscan4 pre-parser above); these
+	 * branches only fire when that signal is missing. */
 	if (nAnswer == SCAN_GOOD && lRealY > 0 &&
 	    (lRealY >= this->scanInfo.ScanAreaSize.lHeight ||
 	     this->scanState.bReadbufEnd)) {
@@ -1211,6 +1215,10 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 			this->scanState.bReadbufEnd ? 1 : 0);
 		this->scanState.bReadbufEnd = TRUE;
 		nAnswer = SCAN_EOF;
+	} else if (nAnswer == SCAN_GOOD && lRealY == 0 &&
+	           this->scanState.bReadbufEnd) {
+		WriteLog("  brscan4: scanner sent no data, reporting SCAN_SERVICE_ERR");
+		nAnswer = SCAN_SERVICE_ERR;
 	}
 
 	if ( nAnswer == SCAN_EOF || nAnswer == SCAN_MPS )  {

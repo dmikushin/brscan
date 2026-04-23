@@ -1,0 +1,11 @@
+/home/marcusmae/forge/brscan/build/CMakeFiles/brscandec.dir
+/home/marcusmae/forge/brscan/build/CMakeFiles/brcolm.dir
+/home/marcusmae/forge/brscan/build/CMakeFiles/sane-brother.dir
+/home/marcusmae/forge/brscan/build/CMakeFiles/sane-brother-stubs.dir
+/home/marcusmae/forge/brscan/build/CMakeFiles/brsaneconfig.dir
+/home/marcusmae/forge/brscan/build/CMakeFiles/edit_cache.dir
+/home/marcusmae/forge/brscan/build/CMakeFiles/rebuild_cache.dir
+/home/marcusmae/forge/brscan/build/CMakeFiles/list_install_components.dir
+/home/marcusmae/forge/brscan/build/CMakeFiles/install.dir
+/home/marcusmae/forge/brscan/build/CMakeFiles/install/local.dir
+/home/marcusmae/forge/brscan/build/CMakeFiles/install/strip.dir
