@@ -4,3 +4,4 @@
 *~
 *.swp
 /autom4te.cache
+build/
