@@ -917,22 +917,28 @@ FreeReceiveBuffer( void )
 int  usb_set_configuration_or_reset_toggle(
 		   Brother_Scanner *this,
 		   int configuration){
-  int errornum,nEndPoint,i;
+  int errornum;
+  int in_ep, out_ep;
 
   errornum = usb_set_configuration(this->hScanner->usb, configuration);
-  if(errornum){
-    nEndPoint = this->hScanner->usb_r_ep;
-    if(nEndPoint <  0x80 || nEndPoint > 0xff){
-      nEndPoint = 0x84;
-      for(i=0; i < ANOTHERENDPOINT; i++){
-	if(this->modelInf.seriesNo  == ChangeEndpoint[i]){
-	  nEndPoint = 0x85;
-	  break;
-	}
-      }
-    }
-    usb_clear_halt(this->hScanner->usb, nEndPoint);
-  }
+
+  /* Always clear halt on both bulk endpoints — not just the IN side, and
+   * not gated on the set_configuration return value. On Linux/libusb-0.1
+   * set_configuration typically returns 0 (no-op when cfg is already set),
+   * so the original conditional was dead code on every well-behaved run.
+   * Meanwhile the DCP-1510 leaves the IN endpoint's DATA toggle in a
+   * stuck state after a scan session closes, which manifests as "scanner
+   * accepts commands but delivers zero bytes" on the NEXT scan session.
+   * Clearing halt resets the DATA toggle. Also clearing OUT is cheap
+   * insurance. */
+  in_ep = this->hScanner->usb_r_ep;
+  if (in_ep < 0x80 || in_ep > 0xff) in_ep = 0x85; /* DCP-1510 default */
+  usb_clear_halt(this->hScanner->usb, in_ep);
+
+  out_ep = this->hScanner->usb_w_ep;
+  if (out_ep < 0x01 || out_ep > 0x7f) out_ep = 0x04; /* DCP-1510 default */
+  usb_clear_halt(this->hScanner->usb, out_ep);
+
   return errornum;
 }
 
