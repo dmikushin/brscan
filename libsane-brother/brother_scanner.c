@@ -892,9 +892,17 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 			WriteLog( "PageScan ReadNonFixedData Cnt = %d", nReadCnt );
 
 			rc = ReadNonFixedData( this->hScanner, lpReadBuf, nReadSize, READ_TIMEOUT, this->modelInf.seriesNo );
-			if (rc < 0) {
+			if (rc <= 0) {
+				/* rc < 0 = USB error, rc == 0 = timed out with no data
+				 * for READ_TIMEOUT (20 s). Both mean "scanner has gone
+				 * silent" — flip bReadbufEnd so the fallback EOF path
+				 * below can force SCAN_EOF based on whatever lines we
+				 * already got. Previous behaviour only handled rc < 0
+				 * and left rc == 0 falling through, looping forever
+				 * when the scanner shipped e.g. 2276 of 2291 rows and
+				 * stopped without the 0x80 Page-End status byte. */
 				this->scanState.bReadbufEnd = TRUE;
-				WriteLog( "  bReadbufEnd =TRUE" );
+				WriteLog( "  bReadbufEnd =TRUE (rc=%d from ReadNonFixedData)", rc );
 				break;
 			}
 			else if (rc > 0){
