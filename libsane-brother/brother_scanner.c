@@ -1009,9 +1009,13 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 				nHeadOnly++;
 				continue;
 			}
-			if (headch != 0x42) {
-				/* Unknown header — stop parsing */
-				WriteLog("  brscan4 parser: unexpected header 0x%02x at remain=%lu", headch, (unsigned long)dwRxTempBuffLength);
+			if (headch != 0x42 && headch != 0x40) {
+				/* Unknown header — log a 32-byte dump and stop pre-parsing. */
+				char hex[3*32+1] = {0};
+				DWORD dump_n = dwRxTempBuffLength < 32 ? dwRxTempBuffLength : 32;
+				for (DWORD ii = 0; ii < dump_n; ii++)
+					snprintf(hex + ii*3, 4, "%02x ", (unsigned char)pt[ii]);
+				WriteLog("  brscan4 parser: unexpected header 0x%02x at remain=%lu, bytes: %s", headch, (unsigned long)dwRxTempBuffLength, hex);
 				break;
 			}
 
@@ -2354,11 +2358,12 @@ ProcessMain(Brother_Scanner *this, WORD wByte, WORD wDataLineCnt, char * lpFwBuf
 					lpFwBuf += this->scanInfo.ScanAreaByte.lWidth;
 				}
 #if BRSANESUFFIX == 2
-			}else if( Header == 0x42 && this->modelInf.seriesNo >= MUST_CONVERT_MODEL ){
+			}else if( (Header == 0x42 || Header == 0x40) && this->modelInf.seriesNo >= MUST_CONVERT_MODEL ){
 				/*
-				 * brscan4 line format: [42 07 00 XX XX XX XX XX XX XX][NN][00][data]
-				 * Header 0x42 already consumed. lpScn points to byte 1 (0x07).
-				 * Skip remaining 9 wrapper bytes, read 1-byte length, skip padding.
+				 * brscan4 line format: [HH 07 00 XX XX XX XX XX XX XX][NN NN][data]
+				 *   HH = 0x42 (mono packbits) or 0x40 (mono uncompressed, SC_FULNOCM).
+				 * Header byte already consumed. lpScn points to byte 1 (0x07).
+				 * Skip remaining 9 wrapper bytes, read 2-byte LE length.
 				 */
 				lpScn += 9;  /* skip to length field (bytes 10-11 of original frame) */
 				count = (WORD)((unsigned char)lpScn[0] | ((unsigned char)lpScn[1] << 8)); /* 2-byte LE length */
@@ -2366,10 +2371,10 @@ ProcessMain(Brother_Scanner *this, WORD wByte, WORD wDataLineCnt, char * lpFwBuf
 				lpSrc = lpScn;
 				Dcount = count;
 
-				WriteLog( "Header=42(brscan4) Count=%4d", count );
+				WriteLog( "Header=%02x(brscan4) Count=%4d", Header, count );
 
 				if( lpFwBuf ){
-					SetupImgLineProc( 0x42 );  /* MONO PACKBITS */
+					SetupImgLineProc( Header );  /* 0x42=MONO PACKBITS, 0x40=MONO NONCOMP */
 					ImgLineProcInfo.pLineData      = lpSrc;
 					ImgLineProcInfo.dwLineDataSize = count;
 					ImgLineProcInfo.pWriteBuff     = lpFwBuf;

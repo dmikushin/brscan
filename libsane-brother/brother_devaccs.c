@@ -51,6 +51,125 @@
 #include "brother_bugchk.h"
 
 #include "brother_devaccs.h"
+
+/*
+ * ============================================================================
+ * USB I/O capture / replay shim for ReadDeviceData.
+ *
+ * Production builds wrap libusb's usb_bulk_read with a thin layer that can,
+ * controlled by environment variables:
+ *
+ *   BRSCAN_CAPTURE_FILE=/path/file
+ *       Append every bulk-read result (return code + bytes) to `file` so a
+ *       complete page-scan transcript can be re-played later without the
+ *       physical scanner. The capture is flushed after every record.
+ *
+ *   BRSCAN_REPLAY_FILE=/path/file
+ *       Replace usb_bulk_read with reads from `file`. Each record is the
+ *       captured (rc, bytes) pair; the lengths and zero-byte timeouts are
+ *       reproduced verbatim so the parser sees the exact same byte stream.
+ *       Once the file is exhausted, the shim returns 0 forever — modelling a
+ *       scanner that has gone silent (which is the failure mode we want to
+ *       reproduce in tests).
+ *
+ * Record format (little-endian):
+ *
+ *   int32_t rc                  -- usb_bulk_read return value
+ *   if rc > 0:  uint8_t data[rc]
+ *
+ * Negative rc (USB error), zero rc (timeout) and positive rc (data) all carry
+ * meaning for the caller, so we record them all. Keeping the payload only for
+ * rc>0 means a long stretch of silence-then-1-byte (the bug-trigger pattern)
+ * stays compact on disk.
+ *
+ * Both modes are mutually exclusive; setting both is treated as replay (the
+ * test scenario).
+ * ============================================================================
+ */
+static FILE *brscan_io_capture_fp = NULL;
+static FILE *brscan_io_replay_fp  = NULL;
+static int   brscan_io_initialised = 0;
+
+static void brscan_io_init(void)
+{
+    if (brscan_io_initialised) return;
+    brscan_io_initialised = 1;
+
+    const char *replay_path  = getenv("BRSCAN_REPLAY_FILE");
+    const char *capture_path = getenv("BRSCAN_CAPTURE_FILE");
+
+    if (replay_path && replay_path[0]) {
+        brscan_io_replay_fp = fopen(replay_path, "rb");
+        if (!brscan_io_replay_fp) {
+            fprintf(stderr,
+                    "[brscan_io] BRSCAN_REPLAY_FILE='%s' could not be opened: %s\n",
+                    replay_path, strerror(errno));
+        } else {
+            fprintf(stderr, "[brscan_io] replay from '%s'\n", replay_path);
+        }
+        return;
+    }
+
+    if (capture_path && capture_path[0]) {
+        brscan_io_capture_fp = fopen(capture_path, "ab");
+        if (!brscan_io_capture_fp) {
+            fprintf(stderr,
+                    "[brscan_io] BRSCAN_CAPTURE_FILE='%s' could not be opened: %s\n",
+                    capture_path, strerror(errno));
+        } else {
+            fprintf(stderr, "[brscan_io] capturing to '%s'\n", capture_path);
+        }
+    }
+}
+
+/* Append one read record to the capture file (no-op if capture is off). */
+static void brscan_io_capture(const void *buf, int rc)
+{
+    brscan_io_init();
+    if (!brscan_io_capture_fp) return;
+
+    int32_t rc_le = (int32_t)rc;
+    fwrite(&rc_le, sizeof(rc_le), 1, brscan_io_capture_fp);
+    if (rc > 0)
+        fwrite(buf, 1, (size_t)rc, brscan_io_capture_fp);
+    fflush(brscan_io_capture_fp);
+}
+
+/*
+ * Drop-in for usb_bulk_read. `dev` is `hScanner->usb` (libusb's real
+ * struct usb_dev_handle*) — passed as void* because brother.h does
+ * `#define usb_dev_handle dev_handle` further up, hijacking the token.
+ * In replay mode the handle / endpoint / timeout arguments are ignored
+ * and bytes come from the replay file. After the file ends we keep
+ * returning 0 (timeout) so the caller's silence-detection path is
+ * exercised — same shape as the real bug.
+ */
+static int brscan_io_replay_or_usb_bulk_read(void *dev, int ep,
+                                             char *buf, int size, int timeout)
+{
+    brscan_io_init();
+    if (!brscan_io_replay_fp) {
+        return usb_bulk_read(dev, ep, buf, size, timeout);
+    }
+
+    int32_t rc_le;
+    size_t got = fread(&rc_le, sizeof(rc_le), 1, brscan_io_replay_fp);
+    if (got != 1) {
+        /* Capture exhausted — model "scanner gone silent". */
+        return 0;
+    }
+    int rc = (int)rc_le;
+    if (rc > 0) {
+        if (rc > size) rc = size;            /* fit caller buffer */
+        size_t want = (size_t)rc;
+        size_t read = fread(buf, 1, want, brscan_io_replay_fp);
+        if (read != want) {
+            /* truncated capture — treat the missing tail as silence */
+            return (int)read;
+        }
+    }
+    return rc;
+}
 //
 // buffer size to transfer
 //
@@ -477,7 +596,7 @@ ReadDeviceData( usb_dev_handle *hScanner, LPSTR lpRxBuffer, int nReadSize, int s
 	}
 
 	if (IFTYPE_NET != hScanner->device){
-	  nResultSize = usb_bulk_read(hScanner->usb,
+	  nResultSize = brscan_io_replay_or_usb_bulk_read(hScanner->usb,
 				      nEndPoint,
 				      lpRxBuffer,
 				      nReadSize,
@@ -492,6 +611,8 @@ ReadDeviceData( usb_dev_handle *hScanner, LPSTR lpRxBuffer, int nReadSize, int s
 			  &nResultSize,
 			  &net_timeout);
 	}
+
+	brscan_io_capture(lpRxBuffer, nResultSize);
 
 	WriteLog( " ReadDeviceData ReadEnd nResultSize = %d\n", nResultSize ) ;
 
