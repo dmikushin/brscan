@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include <usb.h>
 
 /* ------------------------- fake topology ------------------------- */
@@ -62,12 +63,26 @@ static void ensure_topology(void)
 
 /* ------------------------- libusb-0.1 stubs ---------------------- */
 
-void usb_init(void)             { ensure_topology(); }
-int  usb_find_busses(void)      { ensure_topology(); return 1; }
-int  usb_find_devices(void)     { ensure_topology(); return 1; }
+static int g_trace = -1;
+static void trace(const char *fmt, ...)
+{
+    if (g_trace < 0) g_trace = (getenv("BRSCAN_USBSTUB_TRACE") != NULL);
+    if (!g_trace) return;
+    va_list ap;
+    va_start(ap, fmt);
+    fputs("[usb_stub] ", stderr);
+    vfprintf(stderr, fmt, ap);
+    fputc('\n', stderr);
+    va_end(ap);
+}
+
+void usb_init(void)             { trace("usb_init"); ensure_topology(); }
+int  usb_find_busses(void)      { trace("usb_find_busses"); ensure_topology(); return 1; }
+int  usb_find_devices(void)     { trace("usb_find_devices"); ensure_topology(); return 1; }
 
 struct usb_bus *usb_get_busses(void)
 {
+    trace("usb_get_busses → %p (idVendor=04F9 idProduct=02D0)", (void*)&g_fake_bus);
     ensure_topology();
     return &g_fake_bus;
 }
@@ -78,17 +93,18 @@ static struct { int dummy; } g_fake_handle;
 
 usb_dev_handle *usb_open(struct usb_device *dev)
 {
+    trace("usb_open(dev=%p) → %p", (void*)dev, (void*)&g_fake_handle);
     (void)dev;
     return (usb_dev_handle *)&g_fake_handle;
 }
-int usb_close(usb_dev_handle *dev)               { (void)dev; return 0; }
-int usb_set_configuration(usb_dev_handle *dev,int c){ (void)dev;(void)c; return 0; }
-int usb_claim_interface(usb_dev_handle *dev,int i)  { (void)dev;(void)i; return 0; }
-int usb_release_interface(usb_dev_handle *dev,int i){ (void)dev;(void)i; return 0; }
-int usb_clear_halt(usb_dev_handle *dev,unsigned ep){ (void)dev;(void)ep; return 0; }
-int usb_set_altinterface(usb_dev_handle *dev,int a){ (void)dev;(void)a; return 0; }
-int usb_detach_kernel_driver_np(usb_dev_handle *d,int i){(void)d;(void)i; return 0; }
-int usb_reset(usb_dev_handle *dev)                 { (void)dev; return 0; }
+int usb_close(usb_dev_handle *dev)               { trace("usb_close"); (void)dev; return 0; }
+int usb_set_configuration(usb_dev_handle *dev,int c){ trace("usb_set_configuration(c=%d)", c); (void)dev; return 0; }
+int usb_claim_interface(usb_dev_handle *dev,int i)  { trace("usb_claim_interface(i=%d)", i); (void)dev; return 0; }
+int usb_release_interface(usb_dev_handle *dev,int i){ trace("usb_release_interface(i=%d)", i); (void)dev; return 0; }
+int usb_clear_halt(usb_dev_handle *dev,unsigned ep){ trace("usb_clear_halt(ep=0x%02x)", ep); (void)dev; return 0; }
+int usb_set_altinterface(usb_dev_handle *dev,int a){ trace("usb_set_altinterface(a=%d)", a); (void)dev; return 0; }
+int usb_detach_kernel_driver_np(usb_dev_handle *d,int i){trace("usb_detach_kernel_driver_np(i=%d)", i); (void)d; return 0; }
+int usb_reset(usb_dev_handle *dev)                 { trace("usb_reset"); (void)dev; return 0; }
 
 int usb_get_string_simple(usb_dev_handle *dev, int idx, char *buf, size_t len)
 {
@@ -107,7 +123,9 @@ int usb_get_string_simple(usb_dev_handle *dev, int idx, char *buf, size_t len)
 int usb_control_msg(usb_dev_handle *dev, int requesttype, int request,
                     int value, int index, char *bytes, int size, int timeout)
 {
-    (void)dev; (void)requesttype; (void)value; (void)index; (void)timeout;
+    trace("usb_control_msg(rt=0x%02x req=0x%02x val=0x%04x idx=%d size=%d)",
+          requesttype & 0xff, request & 0xff, value & 0xffff, index, size);
+    (void)dev; (void)timeout;
 
     if (bytes && size >= 5 && (request == 0x01 || request == 0x02)) {
         bytes[0] = 0x05;          /* BREQ_GET_LENGTH */
@@ -123,18 +141,42 @@ int usb_control_msg(usb_dev_handle *dev, int requesttype, int request,
 int usb_bulk_write(usb_dev_handle *dev, int ep, const char *bytes,
                    int size, int timeout)
 {
-    (void)dev; (void)ep; (void)bytes; (void)timeout;
-    return size;     /* pretend the write succeeded in full */
+    trace("usb_bulk_write(ep=0x%02x size=%d)", ep, size);
+    (void)dev; (void)bytes; (void)timeout;
+    return size;
 }
 
-/*
- * usb_bulk_read is not expected to be hit when BRSCAN_REPLAY_FILE is set:
- * brother_devaccs.c's shim short-circuits to its replay file before this
- * symbol is ever called. We still provide a defensive stub returning 0.
- */
 int usb_bulk_read(usb_dev_handle *dev, int ep, char *bytes,
                   int size, int timeout)
 {
+    trace("usb_bulk_read(ep=0x%02x maxsize=%d)", ep, size);
     (void)dev; (void)ep; (void)bytes; (void)size; (void)timeout;
     return 0;
 }
+
+/* ---- additional libusb-0.1 entry points dlsym'd by Brother's blob ---- */
+
+int usb_resetep(usb_dev_handle *dev, unsigned ep) { (void)dev; (void)ep; return 0; }
+int usb_get_descriptor(usb_dev_handle *dev, unsigned char type,
+                       unsigned char idx, void *buf, int size)
+    { (void)dev; (void)type; (void)idx; if (buf && size > 0) memset(buf, 0, size); return size; }
+int usb_get_descriptor_by_endpoint(usb_dev_handle *dev, int ep, unsigned char t,
+                                   unsigned char i, void *buf, int s)
+    { (void)dev; (void)ep; (void)t; (void)i;
+      if (buf && s > 0) memset(buf, 0, s); return s; }
+int usb_get_driver_np(usb_dev_handle *dev, int iface, char *name, unsigned int sz)
+    { (void)dev; (void)iface; if (name && sz) name[0] = 0; return -1; /* no driver */ }
+int usb_get_string(usb_dev_handle *dev, int idx, int lang, char *buf, size_t sz)
+    { (void)dev; (void)idx; (void)lang;
+      if (buf && sz) snprintf(buf, sz, "DCP-1510"); return (int)strlen(buf); }
+int usb_interrupt_read(usb_dev_handle *dev, int ep, char *b, int s, int t)
+    { (void)dev; (void)ep; (void)b; (void)s; (void)t; return 0; }
+int usb_interrupt_write(usb_dev_handle *dev, int ep, const char *b, int s, int t)
+    { (void)dev; (void)ep; (void)b; (void)t; return s; }
+int usb_get_bus_and_port_number(usb_dev_handle *dev, unsigned char *bus,
+                                unsigned char *port, unsigned char path_size)
+    { (void)dev; (void)path_size; if (bus) *bus = 6; if (port) *port = 1; return 1; }
+
+/* libusb-0.1 SONAME identifier — keeps the loader happy if Brother
+ * inspects the version string. */
+const char *usb_strerror_msg = "ok";

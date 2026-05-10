@@ -49,12 +49,11 @@ set -e
 
 echo "[run] harness exit code: $RC"
 case "$RC" in
-    0)  echo "FAIL: scan completed cleanly with full image — end-of-page hang"
-        echo "      no longer reproduces. Once you intentionally fix the bug,"
-        echo "      flip this script to expect RC=0 as PASS."
-        exit 1 ;;
-    2)  echo "PASS: end-of-page hang reproduced (truncated / spin / timeout)."
+    0)  echo "PASS: scan completed cleanly (sane_read returned EOF, no hang)."
         exit 0 ;;
+    2)  echo "FAIL: end-of-page hang reproduced — backend hit timeout / spin /"
+        echo "      truncated terminal status before SANE_STATUS_EOF."
+        exit 1 ;;
     *)  echo "ERROR: harness exited with $RC (setup failure or unexpected status)."
         exit "$RC" ;;
 esac

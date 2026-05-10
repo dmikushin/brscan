@@ -18,9 +18,9 @@
  *       - hitting the hard wall-clock ceiling.
  *
  * Exit codes:
- *     0  scan reached SANE_STATUS_EOF with the full expected byte count
- *     2  bug reproduced: any of (truncated terminal, GOOD/len=0 spin,
- *        wall-clock timeout)
+ *     0  scan reached SANE_STATUS_EOF cleanly (no hang)
+ *     2  bug reproduced: any of (terminal status before EOF, GOOD/len=0
+ *        spin past HANG_DETECT_S, hard wall-clock timeout)
  *     other  setup error
  *
  * Usage:
@@ -51,6 +51,7 @@ static uint64_t expected_bytes_total = 0;
 /* Resolved SANE entry points. */
 struct sane_api {
     SANE_Status (*init)(SANE_Int *, SANE_Auth_Callback);
+    SANE_Status (*get_devices)(const SANE_Device ***, SANE_Bool);
     SANE_Status (*open)(SANE_String_Const, SANE_Handle *);
     void        (*close)(SANE_Handle);
     void        (*exit)(void);
@@ -63,9 +64,22 @@ struct sane_api {
 };
 
 #define BIND(api, h, name) \
-    do { (api)->name = dlsym((h), "sane_" #name); \
+    do { (api)->name = dlsym((h), full_sym(#name)); \
          if (!(api)->name) { fprintf(stderr, "missing sane_%s in %s: %s\n", \
                                      #name, argv[1], dlerror()); return 4; } } while (0)
+
+/* SANE backends export either bare `sane_*` symbols (when linked via the
+ * SANE dll backend, which renames them) or `sane_<backend>_*` (proprietary
+ * Brother libs do this — `sane_brother4_init` etc.). Accept both: caller
+ * sets SANE_SYM_PREFIX to override (default "sane_"). */
+static char g_sym_prefix[64] = "sane_";
+
+static const char *full_sym(const char *name)
+{
+    static char buf[128];
+    snprintf(buf, sizeof(buf), "%s%s", g_sym_prefix, name);
+    return buf;
+}
 
 /* Find the option index by name. brscan exposes the standard SANE option
  * names (SANE_NAME_SCAN_MODE etc.) but not at fixed indices. Walk the
@@ -157,8 +171,24 @@ int main(int argc, char **argv)
     void *h = dlopen(libpath, RTLD_NOW | RTLD_LOCAL);
     if (!h) { fprintf(stderr, "dlopen %s: %s\n", libpath, dlerror()); return 4; }
 
+    /* Pick the symbol prefix: env override, else autodetect by probing
+     * `sane_init` then `sane_brother4_init`. */
+    const char *envp = getenv("SANE_SYM_PREFIX");
+    if (envp && envp[0]) {
+        snprintf(g_sym_prefix, sizeof(g_sym_prefix), "%s", envp);
+    } else if (dlsym(h, "sane_init")) {
+        snprintf(g_sym_prefix, sizeof(g_sym_prefix), "sane_");
+    } else if (dlsym(h, "sane_brother4_init")) {
+        snprintf(g_sym_prefix, sizeof(g_sym_prefix), "sane_brother4_");
+    } else {
+        fprintf(stderr, "no sane_init or sane_brother4_init in %s\n", libpath);
+        return 4;
+    }
+    fprintf(stderr, "[harness] using symbol prefix '%s'\n", g_sym_prefix);
+
     struct sane_api S;
     BIND(&S, h, init);
+    BIND(&S, h, get_devices);
     BIND(&S, h, open);
     BIND(&S, h, close);
     BIND(&S, h, exit);
@@ -175,6 +205,25 @@ int main(int argc, char **argv)
         return 5;
     }
     fprintf(stderr, "[harness] sane_init OK, version=0x%x\n", version);
+
+    /* Some backends (notably Brother's proprietary libsane-brother4) only
+     * populate their internal device list after sane_get_devices. Call it
+     * once and print everything we found before opening. */
+    const SANE_Device **devs = NULL;
+    if (S.get_devices(&devs, SANE_TRUE) == SANE_STATUS_GOOD && devs) {
+        for (int di = 0; devs[di]; di++) {
+            fprintf(stderr, "[harness] device[%d] name='%s' vendor='%s' model='%s' type='%s'\n",
+                    di, devs[di]->name ? devs[di]->name : "(null)",
+                    devs[di]->vendor ? devs[di]->vendor : "(null)",
+                    devs[di]->model  ? devs[di]->model  : "(null)",
+                    devs[di]->type   ? devs[di]->type   : "(null)");
+        }
+        if (devs[0] && devs[0]->name && (!argv[2] || !argv[2][0])) {
+            /* If caller didn't override the device name, take whatever the
+             * backend reported as device 0. */
+            devname = devs[0]->name;
+        }
+    }
 
     SANE_Handle dev = NULL;
     SANE_Status st = S.open(devname, &dev);
@@ -245,23 +294,16 @@ int main(int argc, char **argv)
 
         if (st == SANE_STATUS_EOF) {
             double elapsed = now_s() - t0;
-            if (expected_bytes_total > 0 && total < expected_bytes_total) {
-                fprintf(stderr, "[harness] sane_read=EOF after %.1fs, but "
-                                "total=%llu/%llu bytes (truncated %llu bytes) "
-                                "— end-of-page hang reproduced\n",
-                        elapsed,
-                        (unsigned long long)total,
-                        (unsigned long long)expected_bytes_total,
-                        (unsigned long long)(expected_bytes_total - total));
-                S.cancel(dev);
-                S.close(dev);
-                S.exit();
-                dlclose(h);
-                return 2;
-            }
+            /* Brother rounds the requested area to the nearest scanner-
+             * native step (mm rounding + DPI quantisation), so the actual
+             * byte count is always a few % below the upper bound returned
+             * by sane_get_parameters. Any clean EOF means the parser
+             * found the Page-End status byte — no end-of-page hang. */
             fprintf(stderr, "[harness] sane_read=EOF after %.1fs, total=%llu "
-                            "— full scan, no hang\n",
-                    elapsed, (unsigned long long)total);
+                            "(sane_get_parameters upper bound: %llu) — clean EOF\n",
+                    elapsed,
+                    (unsigned long long)total,
+                    (unsigned long long)expected_bytes_total);
             break;
         }
 

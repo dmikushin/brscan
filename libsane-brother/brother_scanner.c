@@ -784,6 +784,46 @@ PageScanColor( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
  *									      *
  *									      *
  ******************************************************************************/
+
+#if BRSANESUFFIX == 2
+/*
+ * brscan4_eop_in_buffer — true iff a brscan4 status byte (0x80 PageEnd,
+ * 0x81 NextPage, 0x83/0xE3 Cancel, 0x84/0x85 Duplex, 0x86 ADF) lies at the
+ * next frame boundary inside `buf[0..len)`. Walk the receive buffer the
+ * way the brscan4 pre-parser will: each data frame is a 12-byte wrapper
+ * (header byte 0x42=packbits or 0x40=uncompressed, then 9 bytes wrapper,
+ * then 2-byte LE length, then `clen` bytes of body). 0x00 is a single-byte
+ * white-line marker. Stops at the first incomplete frame, the first
+ * unknown header, or the first byte with the high bit set — that high-bit
+ * byte is precisely the status code we want to react to.
+ *
+ * This is the same byte-by-byte status detection the proprietary
+ * `make_cache_block` does in libsane-brother4.so.1.0.7 — by running it
+ * inside the inner read loop we stop waiting on the scanner the moment
+ * the page-end byte arrives, instead of holding out for `nMinReadSize`
+ * worth of data that will never come.
+ */
+static int brscan4_eop_in_buffer(const unsigned char *buf, DWORD len)
+{
+    DWORD pos = 0;
+    while (pos < len) {
+        unsigned char b = buf[pos];
+        if ((signed char)b < 0)
+            return 1;                  /* status byte at frame boundary */
+        if (b == 0) { pos++; continue; } /* white line, 1-byte marker   */
+        if (b != 0x42 && b != 0x40)
+            return 0;                  /* let the full pre-parser report */
+        if (len - pos < 12) return 0;  /* incomplete wrapper             */
+        WORD clen = (WORD)((unsigned char)buf[pos + 10]
+                          | ((unsigned char)buf[pos + 11] << 8));
+        DWORD lineTotal = 12 + (DWORD)clen;
+        if (len - pos < lineTotal) return 0;  /* incomplete body         */
+        pos += lineTotal;
+    }
+    return 0;
+}
+#endif
+
 int
 PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 {
@@ -926,6 +966,34 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 				else if(sc == 2){
 				  break;
 				}
+
+#if BRSANESUFFIX == 2
+				/*
+				 * brscan4 end-of-page detection inside the read loop.
+				 * The standard StatusChk above is bypassed for brscan4
+				 * because pixel bytes can have the high bit set; instead
+				 * we walk only the *frame-aligned* boundaries — see
+				 * brscan4_eop_in_buffer above. Mirrors the proprietary
+				 * libsane-brother4.so byte-at-a-time make_cache_block
+				 * decision: as soon as the Page-End status byte is
+				 * sitting at the next frame boundary, stop reading.
+				 *
+				 * Without this we would stay in the inner loop trying to
+				 * accumulate `nMinReadSize` (~3 lines) bytes that the
+				 * scanner has no intention of sending, and only escape
+				 * via the 20 s ReadNonFixedData timeout — which is what
+				 * the captured EoP-hang test reproduces.
+				 */
+				if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL &&
+				    brscan4_eop_in_buffer((unsigned char *)lpRxBuff,
+				                          dwRxTempBuffLength + wData))
+				{
+					this->scanState.bReadbufEnd = TRUE;
+					WriteLog( "  brscan4: status byte at frame boundary, stopping read (wData=%d, residue=%d)",
+					          wData, dwRxTempBuffLength );
+					break;
+				}
+#endif
 			}
 		 }
 	}

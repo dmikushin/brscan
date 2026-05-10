@@ -5,3 +5,7 @@
 *.swp
 /autom4te.cache
 build/
+# Proprietary blobs and harness build artifacts for the EoP-hang test —
+# never check Brother's redistributable blobs into git; recover them with
+# tests/eop_hang/fetch_proprietary.sh when needed for comparison work.
+tests/eop_hang/proprietary/
