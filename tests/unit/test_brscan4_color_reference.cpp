@@ -7,8 +7,16 @@
 
 namespace {
 
-constexpr int kWidth = 1648;
-constexpr int kExpectedTriples = 2290;
+struct ColorCase {
+  const char* name;
+  const char* capture_path;
+  size_t capture_size;
+  int width;
+  int expected_triples;
+  double r_mean;
+  double g_mean;
+  double b_mean;
+};
 
 std::vector<uint8_t> ReadFile(const std::string& path) {
   std::ifstream in(path, std::ios::binary);
@@ -48,7 +56,7 @@ std::vector<uint8_t> ReplayPayloads(const std::vector<uint8_t>& capture) {
   return stream;
 }
 
-std::vector<Frame> ParseColorFrames(const std::vector<uint8_t>& stream) {
+std::vector<Frame> ParseColorFrames(const std::vector<uint8_t>& stream, int width) {
   std::vector<Frame> frames;
   size_t pos = 0;
   for (; pos + 3 <= stream.size(); pos++) {
@@ -70,7 +78,7 @@ std::vector<Frame> ParseColorFrames(const std::vector<uint8_t>& stream) {
     size_t total = 3 + wrapper_len + 2 + payload_len;
     if (total < 5 || pos + total > stream.size()) break;
 
-    if ((header == 0x44 || header == 0x48 || header == 0x4c) && payload_len >= kWidth) {
+    if ((header == 0x44 || header == 0x48 || header == 0x4c) && payload_len >= width) {
       frames.push_back({header, std::vector<uint8_t>(stream.begin() + length_pos + 2,
                                                      stream.begin() + length_pos + 2 + payload_len)});
     }
@@ -79,15 +87,13 @@ std::vector<Frame> ParseColorFrames(const std::vector<uint8_t>& stream) {
   return frames;
 }
 
-}  // namespace
+void VerifyCase(const ColorCase& c) {
+  const auto capture = ReadFile(std::string(BRSCAN_SOURCE_DIR) + c.capture_path);
+  ASSERT_FALSE(capture.empty()) << c.capture_path;
+  EXPECT_EQ(capture.size(), c.capture_size);
 
-TEST(Brscan4ColorReference, CapturedColorStreamUsesCrYCbPlaneTriples) {
-  const auto capture = ReadFile(std::string(BRSCAN_SOURCE_DIR) + "/tests/data/dcp1510_a4_color_200dpi.bin");
-  ASSERT_FALSE(capture.empty());
-  EXPECT_EQ(capture.size(), 11410881u);
-
-  const auto frames = ParseColorFrames(ReplayPayloads(capture));
-  ASSERT_GE(frames.size(), static_cast<size_t>(kExpectedTriples * 3));
+  const auto frames = ParseColorFrames(ReplayPayloads(capture), c.width);
+  ASSERT_GE(frames.size(), static_cast<size_t>(c.expected_triples * 3));
 
   int triples = 0;
   uint64_t r_sum = 0;
@@ -105,11 +111,11 @@ TEST(Brscan4ColorReference, CapturedColorStreamUsesCrYCbPlaneTriples) {
     const auto& cr = frames[i].payload;
     const auto& y = frames[i + 1].payload;
     const auto& cb = frames[i + 2].payload;
-    ASSERT_GE(cr.size(), static_cast<size_t>(kWidth));
-    ASSERT_GE(y.size(), static_cast<size_t>(kWidth));
-    ASSERT_GE(cb.size(), static_cast<size_t>(kWidth));
+    ASSERT_GE(cr.size(), static_cast<size_t>(c.width));
+    ASSERT_GE(y.size(), static_cast<size_t>(c.width));
+    ASSERT_GE(cb.size(), static_cast<size_t>(c.width));
 
-    for (int x = 0; x < kWidth; x++) {
+    for (int x = 0; x < c.width; x++) {
       const int yy = y[x];
       const int cbb = cb[x] - 128;
       const int crr = cr[x] - 128;
@@ -131,17 +137,44 @@ TEST(Brscan4ColorReference, CapturedColorStreamUsesCrYCbPlaneTriples) {
     i += 3;
   }
 
-  EXPECT_EQ(triples, kExpectedTriples);
+  EXPECT_EQ(triples, c.expected_triples) << c.name;
 
-  const double pixels = static_cast<double>(triples) * kWidth;
-  EXPECT_NEAR(r_sum / pixels, 229.36, 0.05);
-  EXPECT_NEAR(g_sum / pixels, 173.11, 0.05);
-  EXPECT_NEAR(b_sum / pixels, 134.67, 0.05);
+  const double pixels = static_cast<double>(triples) * c.width;
+  EXPECT_NEAR(r_sum / pixels, c.r_mean, 0.05) << c.name;
+  EXPECT_NEAR(g_sum / pixels, c.g_mean, 0.05) << c.name;
+  EXPECT_NEAR(b_sum / pixels, c.b_mean, 0.05) << c.name;
 
-  EXPECT_LT(r_min, 10);
-  EXPECT_LT(g_min, 10);
-  EXPECT_LT(b_min, 10);
-  EXPECT_EQ(r_max, 255);
-  EXPECT_EQ(g_max, 255);
-  EXPECT_EQ(b_max, 255);
+  EXPECT_LT(r_min, 10) << c.name;
+  EXPECT_LT(g_min, 10) << c.name;
+  EXPECT_LT(b_min, 10) << c.name;
+  EXPECT_EQ(r_max, 255) << c.name;
+  EXPECT_EQ(g_max, 255) << c.name;
+  EXPECT_EQ(b_max, 255) << c.name;
+}
+
+}  // namespace
+
+TEST(Brscan4ColorReference, CapturedColorStreamsUseCrYCbPlaneTriples) {
+  const ColorCase cases[] = {
+      {"200dpi",
+       "/tests/data/dcp1510_a4_color_200dpi.bin",
+       11410881u,
+       1648,
+       2290,
+       229.36,
+       173.11,
+       134.67},
+      {"300dpi",
+       "/tests/data/dcp1510_a4_color_300dpi.bin",
+       25695933u,
+       2480,
+       3436,
+       229.39,
+       174.32,
+       134.95},
+  };
+
+  for (const auto& c : cases) {
+    VerifyCase(c);
+  }
 }
