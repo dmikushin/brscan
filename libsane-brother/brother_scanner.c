@@ -807,15 +807,6 @@ static int brscan4_device_read(void *ctx, unsigned char *dst, int size)
 	                        this->modelInf.seriesNo);
 }
 
-static int brscan4_read_cached(Brother_Scanner *this, LPSTR dst, int want)
-{
-	return brscan4_cache_read(&brscan4_read_cache,
-	                           brscan4_device_read,
-	                           this,
-	                           (unsigned char *)dst,
-	                           want);
-}
-
 static int brscan4_read_next_record_from_device(Brother_Scanner *this, LPSTR dst, int maxlen)
 {
 	return brscan4_read_next_record(&brscan4_read_cache,
@@ -823,37 +814,6 @@ static int brscan4_read_next_record_from_device(Brother_Scanner *this, LPSTR dst
 	                                 this,
 	                                 (unsigned char *)dst,
 	                                 maxlen);
-}
-
-static int brscan4_status_at_frame_boundary(const unsigned char *buf, DWORD len)
-{
-	DWORD pos = 0;
-
-	while (pos < len) {
-		unsigned char header = buf[pos];
-
-		if (brscan4_is_boundary_status(header))
-			return 1;
-
-		if (len - pos < 3)
-			return 0;
-
-		WORD wrapper_len = (WORD)((unsigned)buf[pos + 1] |
-		                          ((unsigned)buf[pos + 2] << 8));
-		DWORD length_pos = pos + 3 + (DWORD)wrapper_len;
-		if (length_pos + 2 > len)
-			return 0;
-
-		WORD data_len = (WORD)((unsigned)buf[length_pos] |
-		                       ((unsigned)buf[length_pos + 1] << 8));
-		DWORD frame_len = 3 + (DWORD)wrapper_len + 2 + (DWORD)data_len;
-		if (frame_len < 5 || len - pos < frame_len)
-			return 0;
-
-		pos += frame_len;
-	}
-
-	return 0;
 }
 #endif
 
@@ -995,7 +955,7 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 				if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL) {
 					sc = 0;
 					if (brscan4_status_at_frame_boundary((unsigned char *)lpRxBuff,
-					                                    dwRxTempBuffLength + wData)) {
+					                                    wData)) {
 						this->scanState.bReadbufEnd = TRUE;
 						WriteLog( "  brscan4: status byte at frame boundary, stopping read" );
 						break;
@@ -2386,7 +2346,6 @@ ProcessMain(Brother_Scanner *this, WORD wByte, WORD wDataLineCnt, char * lpFwBuf
 #if BRSANESUFFIX == 2
 			if( this->modelInf.seriesNo >= MUST_CONVERT_MODEL ){
 				WORD wrapper_len = (WORD)((unsigned char)lpScn[0] | ((unsigned char)lpScn[1] << 8));
-				LPSTR lpFrame = lpScn - 1;
 				lpScn += 2 + wrapper_len;
 				count = (WORD)((unsigned char)lpScn[0] | ((unsigned char)lpScn[1] << 8));
 				lpScn += 2;

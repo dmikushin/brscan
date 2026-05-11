@@ -95,9 +95,12 @@ install(CODE "
   execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink Brsane.ini \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/share/sane/brother/Brsane2.ini)
 ")
 
-option(BRSCAN_BUILD_TESTS "Build brscan unit tests" ON)
+option(BRSCAN_BUILD_TESTS "Build brscan unit tests" OFF)
 if(BRSCAN_BUILD_TESTS)
   enable_testing()
+  if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/googletest/CMakeLists.txt")
+    message(FATAL_ERROR "BRSCAN_BUILD_TESTS=ON requires ThirdParty/googletest; run git submodule update --init --recursive")
+  endif()
   set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
   set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
   add_subdirectory(ThirdParty/googletest)

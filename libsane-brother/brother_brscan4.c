@@ -54,6 +54,25 @@ int brscan4_record_length(const unsigned char *buf,
 	return 1;
 }
 
+int brscan4_status_at_frame_boundary(const unsigned char *buf, unsigned int len)
+{
+	unsigned int pos = 0;
+
+	while (pos < len) {
+		unsigned int record_len = 0;
+
+		if (brscan4_is_boundary_status(buf[pos]))
+			return 1;
+
+		if (!brscan4_record_length(buf + pos, len - pos, &record_len, 0, 0))
+			return 0;
+
+		pos += record_len;
+	}
+
+	return 0;
+}
+
 void brscan4_cache_reset(Brscan4ReadCache *cache)
 {
 	cache->len = 0;
@@ -128,9 +147,6 @@ int brscan4_read_next_record(Brscan4ReadCache *cache,
 	got = brscan4_cache_read(cache, read_fn, read_ctx, dst + 1, 2);
 	if (got != 2)
 		return 0;
-
-	if (brscan4_record_length(dst, 3, &record_len, &payload_offset, &payload_len))
-		return (int)record_len;
 
 	unsigned int wrapper_len = (unsigned int)dst[1] | ((unsigned int)dst[2] << 8);
 	unsigned int prefix_len = 3 + wrapper_len + 2;

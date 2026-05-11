@@ -22,6 +22,7 @@ int brscan4_record_length(const unsigned char *buf,
                           unsigned int *record_len,
                           unsigned int *payload_offset,
                           unsigned int *payload_len);
+int brscan4_status_at_frame_boundary(const unsigned char *buf, unsigned int len);
 void brscan4_cache_reset(Brscan4ReadCache *cache);
 int brscan4_cache_read(Brscan4ReadCache *cache,
                        brscan4_read_fn read_fn,

@@ -95,6 +95,38 @@ TEST(Brscan4Reference, IncompleteFramesAreNotRecords) {
   EXPECT_EQ(brscan4_record_length(prefix.data(), prefix.size(), &record_len, nullptr, nullptr), 0);
 }
 
+TEST(Brscan4Reference, DetectsStatusAtFrameBoundaryAfterCompleteFrame) {
+  const auto bytes = Hex({
+      0x42, 0x07, 0x00,
+      0x01, 0x00, 0x84, 0x00, 0x00, 0x00, 0x00,
+      0x03, 0x00,
+      0xAA, 0xBB, 0xCC,
+      0x80,
+  });
+
+  EXPECT_EQ(brscan4_status_at_frame_boundary(bytes.data(), bytes.size()), 1);
+}
+
+TEST(Brscan4Reference, IgnoresPayloadBytesThatLookLikeStatus) {
+  const auto bytes = Hex({
+      0x42, 0x07, 0x00,
+      0x01, 0x00, 0x84, 0x00, 0x00, 0x00, 0x00,
+      0x03, 0x00,
+      0x80, 0xC2, 0xE3,
+  });
+
+  EXPECT_EQ(brscan4_status_at_frame_boundary(bytes.data(), bytes.size()), 0);
+}
+
+TEST(Brscan4Reference, IncompleteTailIsNotBoundaryStatus) {
+  const auto bytes = Hex({
+      0x42, 0x07, 0x00,
+      0x01, 0x00,
+  });
+
+  EXPECT_EQ(brscan4_status_at_frame_boundary(bytes.data(), bytes.size()), 0);
+}
+
 TEST(Brscan4Cache, ExactReadKeepsResidualBytes) {
   Brscan4ReadCache cache{};
   brscan4_cache_reset(&cache);
