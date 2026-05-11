@@ -1081,8 +1081,8 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 	wData -= dwRxTempBuffLength;	// take off the odd data (less than 1 line data)
 
 	//transfer the data to the RGB data for the specified models
-	if( (this->modelInf.seriesNo >=  MUST_CONVERT_MODEL && this->devScanInfo.wColorType == COLOR_FUL) ||
-		(this->modelInf.seriesNo >=  MUST_CONVERT_MODEL && this->devScanInfo.wColorType == COLOR_FUL_NOCM) ) {
+	if( 0 && ((this->modelInf.seriesNo >=  MUST_CONVERT_MODEL && this->devScanInfo.wColorType == COLOR_FUL) ||
+		(this->modelInf.seriesNo >=  MUST_CONVERT_MODEL && this->devScanInfo.wColorType == COLOR_FUL_NOCM)) ) {
 		//Analize the buffer data (though the second process)
 		LPBYTE lpOrg;
 		BYTE headch;
