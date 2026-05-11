@@ -815,6 +815,94 @@ static int brscan4_read_next_record_from_device(Brother_Scanner *this, LPSTR dst
 	                                 (unsigned char *)dst,
 	                                 maxlen);
 }
+
+static int brscan4_parse_record_ptr(LPBYTE p, DWORD rem, DWORD *total, LPBYTE *payload, WORD *payload_len)
+{
+	if (rem < 3)
+		return 0;
+
+	WORD wrapper_len = (WORD)((unsigned char)p[1] | ((unsigned char)p[2] << 8));
+	DWORD length_pos = 3 + (DWORD)wrapper_len;
+	if (rem < length_pos + 2)
+		return 0;
+
+	WORD data_len = (WORD)((unsigned char)p[length_pos] | ((unsigned char)p[length_pos + 1] << 8));
+	DWORD record_len = length_pos + 2 + (DWORD)data_len;
+	if (record_len < 5 || rem < record_len)
+		return 0;
+
+	*total = record_len;
+	*payload = p + length_pos + 2;
+	*payload_len = data_len;
+	return 1;
+}
+
+static int brscan4_process_color_direct(Brother_Scanner *this, WORD wData, WORD *lpProcessSize)
+{
+	LPBYTE p = lpRxBuff;
+	DWORD rem = wData;
+	DWORD consumed = 0;
+	int out_line = this->scanInfo.ScanAreaByte.lWidth;
+	int pixels = out_line / 3;
+	int max_lines = (dwFwTempBuffMaxSize - FwTempBuffLength) / out_line;
+	int lines = 0;
+	int answer = SCAN_GOOD;
+
+	while (rem > 0 && lines < max_lines) {
+		if (brscan4_is_boundary_status((unsigned char)p[0])) {
+			answer = GetStatusCode((char)p[0]);
+			p++;
+			rem--;
+			consumed++;
+			break;
+		}
+
+		if (rem < 1 || (p[0] & 0x1C) != 0x04)
+			break;
+
+		DWORD total0, total1, total2;
+		LPBYTE crp, yp, cbp;
+		WORD cr_len, y_len, cb_len;
+		if (!brscan4_parse_record_ptr(p, rem, &total0, &crp, &cr_len))
+			break;
+		if (rem < total0 + 1 || (p[total0] & 0x1C) != 0x08)
+			break;
+		if (!brscan4_parse_record_ptr(p + total0, rem - total0, &total1, &yp, &y_len))
+			break;
+		if (rem < total0 + total1 + 1 || (p[total0 + total1] & 0x1C) != 0x0C)
+			break;
+		if (!brscan4_parse_record_ptr(p + total0 + total1, rem - total0 - total1, &total2, &cbp, &cb_len))
+			break;
+		if (cr_len < pixels || y_len < pixels || cb_len < pixels)
+			break;
+
+		LPBYTE out = (LPBYTE)lpFwTempBuff + FwTempBuffLength + lines * out_line;
+		for (int x = 0; x < pixels; x++) {
+			int Y = yp[x];
+			int Cb = cbp[x] - 128;
+			int Cr = crp[x] - 128;
+			int R = Y + 1.402 * Cr;
+			int G = Y - 0.34414 * Cb - 0.71414 * Cr;
+			int B = Y + 1.772 * Cb;
+			if (R < 0) R = 0; else if (R > 255) R = 255;
+			if (G < 0) G = 0; else if (G > 255) G = 255;
+			if (B < 0) B = 0; else if (B > 255) B = 255;
+			out[x * 3 + 0] = (BYTE)R;
+			out[x * 3 + 1] = (BYTE)G;
+			out[x * 3 + 2] = (BYTE)B;
+		}
+
+		p += total0 + total1 + total2;
+		rem -= total0 + total1 + total2;
+		consumed += total0 + total1 + total2;
+		lines++;
+	}
+
+	FwTempBuffLength += lines * out_line;
+	lRealY += lines;
+	*lpProcessSize = (WORD)consumed;
+	return answer;
+}
 #endif
 
 int
@@ -1080,92 +1168,18 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 	} // end of else (standard parser)
 	wData -= dwRxTempBuffLength;	// take off the odd data (less than 1 line data)
 
-	//transfer the data to the RGB data for the specified models
-	if( (this->modelInf.seriesNo >=  MUST_CONVERT_MODEL && this->devScanInfo.wColorType == COLOR_FUL) ||
-		(this->modelInf.seriesNo >=  MUST_CONVERT_MODEL && this->devScanInfo.wColorType == COLOR_FUL_NOCM) ) {
-		LPBYTE lpOrg;
-		WORD wDataLineCntTemp;
-
-		//05/07/30 Adjust number of lines to multiple number of three
-		while(( (wDataLineCnt - nHeadOnly) % 3) != 0){
-		  WriteLog( "wDataLineCnt - nHeadOnly = %d", wDataLineCnt - nHeadOnly );
-		  wDataLineCnt--;
-		  wData -= nLength;
-		  dwRxTempBuffLength += nLength;
-		}
-
-		wDataLineCntTemp = wDataLineCnt;
-		lpOrg = lpRxBuff;
-
-		for (; wDataLineCntTemp >= 3; wDataLineCntTemp -= 3) {
-			WORD wrapper0, wrapper1, wrapper2;
-			DWORD lenpos0, lenpos1, lenpos2;
-			WORD length0, length1, length2, i;
-			DWORD total0, total1, total2;
-			unsigned char Y, Cb, Cr;
-			int R, G, B;
-			unsigned char *pCr, *pY, *pCb;
-
-			if (brscan4_is_boundary_status((unsigned char)lpOrg[0]))
-				break;
-			if ((lpOrg[0] & 0x1C) != 0x04)
-				break;
-
-			wrapper0 = (WORD)((unsigned char)lpOrg[1] | ((unsigned char)lpOrg[2] << 8));
-			lenpos0 = 3 + (DWORD)wrapper0;
-			length0 = (WORD)((unsigned char)lpOrg[lenpos0] | ((unsigned char)lpOrg[lenpos0 + 1] << 8));
-			total0 = lenpos0 + 2 + (DWORD)length0;
-
-			wrapper1 = (WORD)((unsigned char)lpOrg[total0 + 1] | ((unsigned char)lpOrg[total0 + 2] << 8));
-			lenpos1 = total0 + 3 + (DWORD)wrapper1;
-			length1 = (WORD)((unsigned char)lpOrg[lenpos1] | ((unsigned char)lpOrg[lenpos1 + 1] << 8));
-			total1 = 3 + (DWORD)wrapper1 + 2 + (DWORD)length1;
-
-			wrapper2 = (WORD)((unsigned char)lpOrg[total0 + total1 + 1] | ((unsigned char)lpOrg[total0 + total1 + 2] << 8));
-			lenpos2 = total0 + total1 + 3 + (DWORD)wrapper2;
-			length2 = (WORD)((unsigned char)lpOrg[lenpos2] | ((unsigned char)lpOrg[lenpos2 + 1] << 8));
-			total2 = 3 + (DWORD)wrapper2 + 2 + (DWORD)length2;
-
-			if (length0 != length1 || length0 != length2)
-				break;
-			if ((lpOrg[total0] & 0x1C) != 0x08 || (lpOrg[total0 + total1] & 0x1C) != 0x0C)
-				break;
-
-			pCr = (unsigned char *)lpOrg + lenpos0 + 2;
-			pY  = (unsigned char *)lpOrg + lenpos1 + 2;
-			pCb = (unsigned char *)lpOrg + lenpos2 + 2;
-
-			for(i=0;i < length0; i++){
-			  Cr = pCr[i];
-			  Y  = pY[i];
-			  Cb = pCb[i];
-
-			  R =  Y + 1.402 * (Cr - 128);
-			  G =  Y - 0.34414 * (Cb - 128) - 0.71414 * (Cr - 128);
-			  B =  Y + 1.772 * (Cb -128);
-
-			  if(R > 255) R=255;
-			  if(R < 0) R=0;
-			  if(G > 255) G=255;
-			  if(G < 0) G=0;
-			  if(B > 255) B=255;
-			  if(B < 0) B=0;
-
-			  pCr[i] = (unsigned char)R;
-			  pY[i]  = (unsigned char)G;
-			  pCb[i] = (unsigned char)B;
-			}
-
-			lpOrg += total0 + total1 + total2;
-		}
-	}//the end of RGB-exchanging process
 	// the end of raster data expanding operation
 #ifdef NO39_DEBUG
 	if (gettimeofday(&start_tv, &tz) == -1)
 		return FALSE;
 #endif
 
-	nAnswer = ProcessMain( this, wData, wDataLineCnt, lpFwTempBuff+FwTempBuffLength, &FwTempBuffLength, &wProcessSize );
+	if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL &&
+	    (this->devScanInfo.wColorType == COLOR_FUL ||
+	     this->devScanInfo.wColorType == COLOR_FUL_NOCM))
+		nAnswer = brscan4_process_color_direct(this, wData, &wProcessSize);
+	else
+		nAnswer = ProcessMain( this, wData, wDataLineCnt, lpFwTempBuff+FwTempBuffLength, &FwTempBuffLength, &wProcessSize );
 
 #ifdef NO39_DEBUG
 	if (gettimeofday(&tv, &tz) == 0) {
@@ -1590,7 +1604,12 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 		return FALSE;
 #endif
 
-	nAnswer = ProcessMain( this, wData, wDataLineCnt, lpFwTempBuff+FwTempBuffLength, &FwTempBuffLength, &wProcessSize );
+	if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL &&
+	    (this->devScanInfo.wColorType == COLOR_FUL ||
+	     this->devScanInfo.wColorType == COLOR_FUL_NOCM))
+		nAnswer = brscan4_process_color_direct(this, wData, &wProcessSize);
+	else
+		nAnswer = ProcessMain( this, wData, wDataLineCnt, lpFwTempBuff+FwTempBuffLength, &FwTempBuffLength, &wProcessSize );
 
 #ifdef NO39_DEBUG
 	if (gettimeofday(&tv, &tz) == 0) {

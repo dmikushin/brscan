@@ -274,6 +274,10 @@ int main(int argc, char **argv)
     SANE_Byte buf[32 * 1024];
     uint64_t total = 0;
     uint64_t prev_total = 0;
+    uint64_t rgb_sum[3] = {0, 0, 0};
+    uint64_t rgb_pixels = 0;
+    unsigned char rgb_min[3] = {255, 255, 255};
+    unsigned char rgb_max[3] = {0, 0, 0};
     int      zero_reads_since_progress = 0;
     double   t0 = now_s();
     double   t_last_progress = t0;
@@ -328,6 +332,17 @@ int main(int argc, char **argv)
         }
 
         if (got > 0) {
+            if (p.format == SANE_FRAME_RGB && p.depth == 8) {
+                for (SANE_Int i = 0; i + 2 < got; i += 3) {
+                    for (int c = 0; c < 3; c++) {
+                        unsigned char v = buf[i + c];
+                        rgb_sum[c] += v;
+                        if (v < rgb_min[c]) rgb_min[c] = v;
+                        if (v > rgb_max[c]) rgb_max[c] = v;
+                    }
+                    rgb_pixels++;
+                }
+            }
             total += (uint64_t)got;
             t_last_progress = now;
             zero_reads_since_progress = 0;
@@ -364,6 +379,24 @@ int main(int argc, char **argv)
 
     fprintf(stderr, "[harness] DONE: total=%llu bytes, expected=%llu — full scan\n",
             (unsigned long long)total, (unsigned long long)expected_bytes_total);
+    if (rgb_pixels > 0) {
+        double r_mean = (double)rgb_sum[0] / (double)rgb_pixels;
+        double g_mean = (double)rgb_sum[1] / (double)rgb_pixels;
+        double b_mean = (double)rgb_sum[2] / (double)rgb_pixels;
+        fprintf(stderr, "[harness] RGB stats: mean=%.3f/%.3f/%.3f min=%u/%u/%u max=%u/%u/%u\n",
+                r_mean, g_mean, b_mean,
+                rgb_min[0], rgb_min[1], rgb_min[2],
+                rgb_max[0], rgb_max[1], rgb_max[2]);
+        if (getenv("BRSCAN_ASSERT_NOT_YELLOW") &&
+            rgb_min[0] == 255 && rgb_min[1] == 255 && b_mean < 200.0) {
+            fprintf(stderr, "[harness] FAIL: RGB output is yellow-only (R/G saturated)\n");
+            S.cancel(dev);
+            S.close(dev);
+            S.exit();
+            dlclose(h);
+            return 3;
+        }
+    }
     S.cancel(dev);
     S.close(dev);
     S.exit();

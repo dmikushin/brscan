@@ -54,6 +54,8 @@ case "$RC" in
     2)  echo "FAIL: end-of-page hang reproduced — backend hit timeout / spin /"
         echo "      truncated terminal status before SANE_STATUS_EOF."
         exit 1 ;;
+    3)  echo "FAIL: RGB output regression — color scan is yellow-only."
+        exit 1 ;;
     *)  echo "ERROR: harness exited with $RC (setup failure or unexpected status)."
         exit "$RC" ;;
 esac
