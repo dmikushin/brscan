@@ -233,10 +233,15 @@ int main(int argc, char **argv)
     }
     fprintf(stderr, "[harness] sane_open OK\n");
 
-    /* Configure a 200 dpi True Gray A4 scan, matching the captured
-     * transcript so the parser sees exactly the bytes it saw on hardware. */
-    if (set_string_opt(&S, dev, SANE_NAME_SCAN_MODE,       "True Gray") < 0 ||
-        set_int_opt   (&S, dev, SANE_NAME_SCAN_RESOLUTION, 200)         < 0 ||
+    const char *mode = getenv("BRSCAN_HARNESS_MODE");
+    const char *resolution_s = getenv("BRSCAN_HARNESS_RESOLUTION");
+    int resolution = resolution_s && resolution_s[0] ? atoi(resolution_s) : 200;
+    if (!mode || !mode[0]) mode = "True Gray";
+
+    /* Configure an A4 scan matching the captured transcript so the parser sees
+     * exactly the bytes it saw on hardware. */
+    if (set_string_opt(&S, dev, SANE_NAME_SCAN_MODE,       mode)       < 0 ||
+        set_int_opt   (&S, dev, SANE_NAME_SCAN_RESOLUTION, resolution) < 0 ||
         set_fixed_opt_mm(&S, dev, SANE_NAME_SCAN_TL_X, 0.0)              < 0 ||
         set_fixed_opt_mm(&S, dev, SANE_NAME_SCAN_TL_Y, 0.0)              < 0 ||
         set_fixed_opt_mm(&S, dev, SANE_NAME_SCAN_BR_X, 210.0)            < 0 ||

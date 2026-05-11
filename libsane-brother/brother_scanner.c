@@ -855,14 +855,6 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 		return rc;
 	}
 
-	/* brscan4 + 24-bit color: scanner sends a JPEG stream, not packbits.
-	 * Route to the dedicated libjpeg-based path that bypasses ProcessMain. */
-	if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL &&
-	    (this->devScanInfo.wColorType == COLOR_FUL ||
-	     this->devScanInfo.wColorType == COLOR_FUL_NOCM)) {
-		return PageScanColor(this, lpFwBuf, nMaxLen, lpFwLen);
-	}
-
 	nPageScanCnt++;
 	WriteLog( ">>> PageScan Start <<< cnt=%d nMaxLen=%d\n", nPageScanCnt, nMaxLen);
 
