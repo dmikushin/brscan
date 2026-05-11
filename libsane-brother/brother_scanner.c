@@ -1081,11 +1081,9 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 	wData -= dwRxTempBuffLength;	// take off the odd data (less than 1 line data)
 
 	//transfer the data to the RGB data for the specified models
-	if( 0 && ((this->modelInf.seriesNo >=  MUST_CONVERT_MODEL && this->devScanInfo.wColorType == COLOR_FUL) ||
-		(this->modelInf.seriesNo >=  MUST_CONVERT_MODEL && this->devScanInfo.wColorType == COLOR_FUL_NOCM)) ) {
-		//Analize the buffer data (though the second process)
+	if( (this->modelInf.seriesNo >=  MUST_CONVERT_MODEL && this->devScanInfo.wColorType == COLOR_FUL) ||
+		(this->modelInf.seriesNo >=  MUST_CONVERT_MODEL && this->devScanInfo.wColorType == COLOR_FUL_NOCM) ) {
 		LPBYTE lpOrg;
-		BYTE headch;
 		WORD wDataLineCntTemp;
 
 		//05/07/30 Adjust number of lines to multiple number of three
@@ -1097,67 +1095,68 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 		}
 
 		wDataLineCntTemp = wDataLineCnt;
-
 		lpOrg = lpRxBuff;
 
-		for (wDataLineCntTemp;  wDataLineCntTemp > 0;){
+		for (; wDataLineCntTemp >= 3; wDataLineCntTemp -= 3) {
+			WORD wrapper0, wrapper1, wrapper2;
+			DWORD lenpos0, lenpos1, lenpos2;
+			WORD length0, length1, length2, i;
+			DWORD total0, total1, total2;
+			unsigned char Y, Cb, Cr;
+			int R, G, B;
+			unsigned char *pCr, *pY, *pCb;
 
-			headch = (BYTE)*lpOrg;
+			if (brscan4_is_boundary_status((unsigned char)lpOrg[0]))
+				break;
+			if ((lpOrg[0] & 0x1C) != 0x04)
+				break;
 
-			//06/02/28 for Duplex
-			if(headch == 0x84 || headch == 0x85 || (char)headch == 0 ){
-			  lpOrg++;
-			  wDataLineCntTemp--;
-			}else if((signed char)headch < 0){
-			  break;
-			}else{
-				// Image data
-				WORD length,i;
-				unsigned char Y, Cb, Cr;
-				int R, G, B;
-				unsigned char* pData;
+			wrapper0 = (WORD)((unsigned char)lpOrg[1] | ((unsigned char)lpOrg[2] << 8));
+			lenpos0 = 3 + (DWORD)wrapper0;
+			length0 = (WORD)((unsigned char)lpOrg[lenpos0] | ((unsigned char)lpOrg[lenpos0 + 1] << 8));
+			total0 = lenpos0 + 2 + (DWORD)length0;
 
-				// get the lenght-information of the raster data
-				length = ((unsigned char)lpOrg[1] << 8) | (unsigned char)lpOrg[2]; // big-endian for brscan4 models
-				length += 3;
-				pData = (unsigned char *)lpOrg;
+			wrapper1 = (WORD)((unsigned char)lpOrg[total0 + 1] | ((unsigned char)lpOrg[total0 + 2] << 8));
+			lenpos1 = total0 + 3 + (DWORD)wrapper1;
+			length1 = (WORD)((unsigned char)lpOrg[lenpos1] | ((unsigned char)lpOrg[lenpos1 + 1] << 8));
+			total1 = 3 + (DWORD)wrapper1 + 2 + (DWORD)length1;
 
-				//rerew the header to RGB header type
-				*pData = (*pData & 0xE3) | 0x04;
-				*(pData + length) = (*(pData + length) & 0xE3) | 0x08;
-				*(pData + length*2) = (*(pData + length*2) & 0xE3) | 0x0C;
+			wrapper2 = (WORD)((unsigned char)lpOrg[total0 + total1 + 1] | ((unsigned char)lpOrg[total0 + total1 + 2] << 8));
+			lenpos2 = total0 + total1 + 3 + (DWORD)wrapper2;
+			length2 = (WORD)((unsigned char)lpOrg[lenpos2] | ((unsigned char)lpOrg[lenpos2 + 1] << 8));
+			total2 = 3 + (DWORD)wrapper2 + 2 + (DWORD)length2;
 
-				pData +=3;
+			if (length0 != length1 || length0 != length2)
+				break;
+			if ((lpOrg[total0] & 0x1C) != 0x08 || (lpOrg[total0 + total1] & 0x1C) != 0x0C)
+				break;
 
-				//calculate the RGB data from YCbCr data
-				for(i=0;i < length-3; i++){
-				  Cr = *(pData + i);
-				  Y  = *(pData + length + i);
-				  Cb = *(pData + length*2 + i);
+			pCr = (unsigned char *)lpOrg + lenpos0 + 2;
+			pY  = (unsigned char *)lpOrg + lenpos1 + 2;
+			pCb = (unsigned char *)lpOrg + lenpos2 + 2;
 
-				  R =  Y + 1.402 * (Cr - 128);
-				  G =  Y - 0.34414 * (Cb - 128) - 0.71414 * (Cr - 128);
-				  B =  Y + 1.772 * (Cb -128);
+			for(i=0;i < length0; i++){
+			  Cr = pCr[i];
+			  Y  = pY[i];
+			  Cb = pCb[i];
 
-				  if(R > 255) R=255;
-				  if(R < 0) R=0;
-				  if(G > 255) G=255;
-				  if(G < 0) G=0;
-				  if(G > 255) B=255;
-				  if(G < 0) B=0;
+			  R =  Y + 1.402 * (Cr - 128);
+			  G =  Y - 0.34414 * (Cb - 128) - 0.71414 * (Cr - 128);
+			  B =  Y + 1.772 * (Cb -128);
 
-				  *(pData + i) = (unsigned char)R;
-				  *(pData + length + i) = (unsigned char)G;
-				  *(pData + length*2 + i) = (unsigned char)B;
+			  if(R > 255) R=255;
+			  if(R < 0) R=0;
+			  if(G > 255) G=255;
+			  if(G < 0) G=0;
+			  if(B > 255) B=255;
+			  if(B < 0) B=0;
 
-				}
-
-				wDataLineCntTemp -= 3;
-				//renew the pointer
-				if(wDataLineCntTemp > 2){
-				  lpOrg += length*3;
-				}
+			  pCr[i] = (unsigned char)R;
+			  pY[i]  = (unsigned char)G;
+			  pCb[i] = (unsigned char)B;
 			}
+
+			lpOrg += total0 + total1 + total2;
 		}
 	}//the end of RGB-exchanging process
 	// the end of raster data expanding operation
