@@ -112,5 +112,12 @@ if(BRSCAN_BUILD_TESTS)
     ${CMAKE_CURRENT_SOURCE_DIR}/libsane-brother)
   target_link_libraries(test_brscan4_reference gtest_main)
   add_test(NAME brscan4_reference COMMAND test_brscan4_reference)
+
+  add_executable(test_brscan4_color_reference
+    tests/unit/test_brscan4_color_reference.cpp)
+  target_compile_definitions(test_brscan4_color_reference PRIVATE
+    BRSCAN_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(test_brscan4_color_reference gtest_main)
+  add_test(NAME brscan4_color_reference COMMAND test_brscan4_color_reference)
 endif()
 
