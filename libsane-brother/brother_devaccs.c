@@ -143,13 +143,35 @@ static void brscan_io_capture(const void *buf, int rc)
  * and bytes come from the replay file. After the file ends we keep
  * returning 0 (timeout) so the caller's silence-detection path is
  * exercised — same shape as the real bug.
+ *
+ * Real libusb-0.1 returns whatever fits in the caller's buffer and
+ * leaves the rest in the kernel URB queue for the next call. Replay
+ * has to mimic that, otherwise byte-at-a-time callers (the new
+ * brscan4 streaming PageScan) misinterpret the unread tail as the
+ * next record's int32 length and the parser desyncs immediately.
+ * `g_residue_buf`/`g_residue_len`/`g_residue_pos` carry the unread
+ * portion of the previous record across calls.
  */
+static char  *g_residue_buf = NULL;
+static size_t g_residue_cap = 0;
+static size_t g_residue_len = 0;
+static size_t g_residue_pos = 0;
+
 static int brscan_io_replay_or_usb_bulk_read(void *dev, int ep,
                                              char *buf, int size, int timeout)
 {
     brscan_io_init();
     if (!brscan_io_replay_fp) {
         return usb_bulk_read(dev, ep, buf, size, timeout);
+    }
+
+    /* Drain leftover from a previous oversized record first. */
+    if (g_residue_pos < g_residue_len) {
+        size_t avail = g_residue_len - g_residue_pos;
+        size_t take  = (size_t)size < avail ? (size_t)size : avail;
+        memcpy(buf, g_residue_buf + g_residue_pos, take);
+        g_residue_pos += take;
+        return (int)take;
     }
 
     int32_t rc_le;
@@ -159,16 +181,36 @@ static int brscan_io_replay_or_usb_bulk_read(void *dev, int ep,
         return 0;
     }
     int rc = (int)rc_le;
-    if (rc > 0) {
-        if (rc > size) rc = size;            /* fit caller buffer */
-        size_t want = (size_t)rc;
-        size_t read = fread(buf, 1, want, brscan_io_replay_fp);
-        if (read != want) {
-            /* truncated capture — treat the missing tail as silence */
-            return (int)read;
-        }
+    if (rc <= 0) {
+        return rc;                       /* timeout / error verbatim   */
     }
-    return rc;
+
+    /* Always slurp the full record from disk so the file pointer stays
+     * aligned with the next int32 length tag. If the caller asked for
+     * fewer bytes than the record contains, hand back what they asked
+     * for and stash the tail in g_residue_buf for the next call. */
+    if ((size_t)rc > g_residue_cap) {
+        char *grown = realloc(g_residue_buf, (size_t)rc);
+        if (!grown) return -1;
+        g_residue_buf = grown;
+        g_residue_cap = (size_t)rc;
+    }
+    size_t want = (size_t)rc;
+    size_t read = fread(g_residue_buf, 1, want, brscan_io_replay_fp);
+    if (read < want) {
+        /* truncated capture — deliver what we have and stop */
+        g_residue_len = read;
+        g_residue_pos = 0;
+    } else {
+        g_residue_len = want;
+        g_residue_pos = 0;
+    }
+
+    size_t avail = g_residue_len - g_residue_pos;
+    size_t take  = (size_t)size < avail ? (size_t)size : avail;
+    memcpy(buf, g_residue_buf + g_residue_pos, take);
+    g_residue_pos += take;
+    return (int)take;
 }
 //
 // buffer size to transfer

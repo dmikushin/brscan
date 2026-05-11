@@ -51,6 +51,7 @@
 #include "brother_bugchk.h"
 
 #include "brother_scanner.h"
+#include "brother_brscan4.h"
 #include "brother_color.h"
 
 #ifdef NO39_DEBUG
@@ -66,6 +67,10 @@ DWORD	dwFwTempBuffMaxSize= 0;
 int     FwTempBuffLength = 0;
 BOOL    bTxScanCmd = FALSE;
 DWORD	dwRxBuffMaxSize= 0;
+
+#if BRSANESUFFIX == 2
+static Brscan4ReadCache brscan4_read_cache;
+#endif
 
 LONG lRealY = 0;
 
@@ -354,6 +359,9 @@ ScanStart( Brother_Scanner *this )
 		}
 
 		dwRxTempBuffLength = 0;
+#if BRSANESUFFIX == 2
+		brscan4_cache_reset(&brscan4_read_cache);
+#endif
 		FwTempBuffLength = 0;
 
 		// Allocate the Transmission-preserve buffer
@@ -396,6 +404,9 @@ ScanStart( Brother_Scanner *this )
 
 		lRealY = 0;
 		dwRxTempBuffLength = 0;
+#if BRSANESUFFIX == 2
+		brscan4_cache_reset(&brscan4_read_cache);
+#endif
 		FwTempBuffLength = 0;
 
 		//06/02/28
@@ -786,41 +797,63 @@ PageScanColor( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
  ******************************************************************************/
 
 #if BRSANESUFFIX == 2
-/*
- * brscan4_eop_in_buffer — true iff a brscan4 status byte (0x80 PageEnd,
- * 0x81 NextPage, 0x83/0xE3 Cancel, 0x84/0x85 Duplex, 0x86 ADF) lies at the
- * next frame boundary inside `buf[0..len)`. Walk the receive buffer the
- * way the brscan4 pre-parser will: each data frame is a 12-byte wrapper
- * (header byte 0x42=packbits or 0x40=uncompressed, then 9 bytes wrapper,
- * then 2-byte LE length, then `clen` bytes of body). 0x00 is a single-byte
- * white-line marker. Stops at the first incomplete frame, the first
- * unknown header, or the first byte with the high bit set — that high-bit
- * byte is precisely the status code we want to react to.
- *
- * This is the same byte-by-byte status detection the proprietary
- * `make_cache_block` does in libsane-brother4.so.1.0.7 — by running it
- * inside the inner read loop we stop waiting on the scanner the moment
- * the page-end byte arrives, instead of holding out for `nMinReadSize`
- * worth of data that will never come.
- */
-static int brscan4_eop_in_buffer(const unsigned char *buf, DWORD len)
+static int brscan4_device_read(void *ctx, unsigned char *dst, int size)
 {
-    DWORD pos = 0;
-    while (pos < len) {
-        unsigned char b = buf[pos];
-        if ((signed char)b < 0)
-            return 1;                  /* status byte at frame boundary */
-        if (b == 0) { pos++; continue; } /* white line, 1-byte marker   */
-        if (b != 0x42 && b != 0x40)
-            return 0;                  /* let the full pre-parser report */
-        if (len - pos < 12) return 0;  /* incomplete wrapper             */
-        WORD clen = (WORD)((unsigned char)buf[pos + 10]
-                          | ((unsigned char)buf[pos + 11] << 8));
-        DWORD lineTotal = 12 + (DWORD)clen;
-        if (len - pos < lineTotal) return 0;  /* incomplete body         */
-        pos += lineTotal;
-    }
-    return 0;
+	Brother_Scanner *this = (Brother_Scanner *)ctx;
+	return ReadNonFixedData(this->hScanner,
+	                        (LPSTR)dst,
+	                        size,
+	                        READ_TIMEOUT,
+	                        this->modelInf.seriesNo);
+}
+
+static int brscan4_read_cached(Brother_Scanner *this, LPSTR dst, int want)
+{
+	return brscan4_cache_read(&brscan4_read_cache,
+	                           brscan4_device_read,
+	                           this,
+	                           (unsigned char *)dst,
+	                           want);
+}
+
+static int brscan4_read_next_record_from_device(Brother_Scanner *this, LPSTR dst, int maxlen)
+{
+	return brscan4_read_next_record(&brscan4_read_cache,
+	                                 brscan4_device_read,
+	                                 this,
+	                                 (unsigned char *)dst,
+	                                 maxlen);
+}
+
+static int brscan4_status_at_frame_boundary(const unsigned char *buf, DWORD len)
+{
+	DWORD pos = 0;
+
+	while (pos < len) {
+		unsigned char header = buf[pos];
+
+		if (brscan4_is_boundary_status(header))
+			return 1;
+
+		if (len - pos < 3)
+			return 0;
+
+		WORD wrapper_len = (WORD)((unsigned)buf[pos + 1] |
+		                          ((unsigned)buf[pos + 2] << 8));
+		DWORD length_pos = pos + 3 + (DWORD)wrapper_len;
+		if (length_pos + 2 > len)
+			return 0;
+
+		WORD data_len = (WORD)((unsigned)buf[length_pos] |
+		                       ((unsigned)buf[length_pos + 1] << 8));
+		DWORD frame_len = 3 + (DWORD)wrapper_len + 2 + (DWORD)data_len;
+		if (frame_len < 5 || len - pos < frame_len)
+			return 0;
+
+		pos += frame_len;
+	}
+
+	return 0;
 }
 #endif
 
@@ -931,7 +964,12 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 			WriteLog( "Read request size is %d, (dwRxTempBuffLength = %d)", gwInBuffSize - dwRxTempBuffLength, dwRxTempBuffLength );
 			WriteLog( "PageScan ReadNonFixedData Cnt = %d", nReadCnt );
 
-			rc = ReadNonFixedData( this->hScanner, lpReadBuf, nReadSize, READ_TIMEOUT, this->modelInf.seriesNo );
+#if BRSANESUFFIX == 2
+			if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL)
+				rc = brscan4_read_next_record_from_device( this, lpReadBuf, nReadSize );
+			else
+#endif
+				rc = ReadNonFixedData( this->hScanner, lpReadBuf, nReadSize, READ_TIMEOUT, this->modelInf.seriesNo );
 			if (rc <= 0) {
 				/* rc < 0 = USB error, rc == 0 = timed out with no data
 				 * for READ_TIMEOUT (20 s). Both mean "scanner has gone
@@ -954,8 +992,15 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 				 * status bytes. For brscan4 models, the data format is
 				 * different and StatusChk would false-positive on
 				 * compressed data bytes >= 0x80. Skip it. */
-				if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL)
+				if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL) {
 					sc = 0;
+					if (brscan4_status_at_frame_boundary((unsigned char *)lpRxBuff,
+					                                    dwRxTempBuffLength + wData)) {
+						this->scanState.bReadbufEnd = TRUE;
+						WriteLog( "  brscan4: status byte at frame boundary, stopping read" );
+						break;
+					}
+				}
 				else
 					sc = StatusChk(lpRxBuff, wData);
 				if (sc == 1) { // check whether the status code has been received or not
@@ -966,34 +1011,6 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 				else if(sc == 2){
 				  break;
 				}
-
-#if BRSANESUFFIX == 2
-				/*
-				 * brscan4 end-of-page detection inside the read loop.
-				 * The standard StatusChk above is bypassed for brscan4
-				 * because pixel bytes can have the high bit set; instead
-				 * we walk only the *frame-aligned* boundaries — see
-				 * brscan4_eop_in_buffer above. Mirrors the proprietary
-				 * libsane-brother4.so byte-at-a-time make_cache_block
-				 * decision: as soon as the Page-End status byte is
-				 * sitting at the next frame boundary, stop reading.
-				 *
-				 * Without this we would stay in the inner loop trying to
-				 * accumulate `nMinReadSize` (~3 lines) bytes that the
-				 * scanner has no intention of sending, and only escape
-				 * via the 20 s ReadNonFixedData timeout — which is what
-				 * the captured EoP-hang test reproduces.
-				 */
-				if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL &&
-				    brscan4_eop_in_buffer((unsigned char *)lpRxBuff,
-				                          dwRxTempBuffLength + wData))
-				{
-					this->scanState.bReadbufEnd = TRUE;
-					WriteLog( "  brscan4: status byte at frame boundary, stopping read (wData=%d, residue=%d)",
-					          wData, dwRxTempBuffLength );
-					break;
-				}
-#endif
 			}
 		 }
 	}
@@ -1028,78 +1045,30 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 	dwRxTempBuffLength = wData;
 
 #if BRSANESUFFIX == 2
-	/*
-	 * DCP-1510 and similar brscan4 models (seriesNo >= MUST_CONVERT_MODEL)
-	 * use a different line format than the standard Brother protocol:
-	 *
-	 *   [42 07 00 01 00 84 00 00 00 00]  10-byte per-line wrapper
-	 *   [NN]                              1-byte compressed data length
-	 *   [00]                              1-byte padding/separator
-	 *   [NN bytes of packbits data]       compressed raster data
-	 *
-	 * Total per line: 12 + NN bytes.
-	 * Verified by hex dump analysis of raw USB data from DCP-1510.
-	 */
 	if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL) {
 		for (wDataLineCnt=0; wDataLineCnt < nFwTempBuffMaxLine;) {
 			if (dwRxTempBuffLength == 0) break;
 
 			BYTE headch = (BYTE)*pt;
 
-			/* brscan4 sends bare 1-byte status codes between frames
-			 * (0x80 = Page End, 0x81 = NextPage, 0x83/0xE3 = Cancel,
-			 *  0x84/0x85 = Duplex sync). Handle BEFORE the 12-byte
-			 * data-frame guard so a trailing status byte isn't stuck
-			 * in the residue buffer forever.
-			 *
-			 * We leave the status byte in place (count it as one line)
-			 * and break pre-parsing — ProcessMain's GetStatusCode() will
-			 * see it on iteration `wDataLineCnt-1` and return SCAN_EOF /
-			 * SCAN_MPS / SCAN_CANCEL, which triggers the ScanDecPageEnd
-			 * flush path in the caller. */
-			if ((signed char)headch < 0) {
-				WriteLog("  brscan4: status byte 0x%02x at line %d, stopping pre-parse",
-					headch, wDataLineCnt);
+			if (brscan4_is_boundary_status(headch)) {
 				dwRxTempBuffLength--;
 				pt++;
 				wDataLineCnt++;
 				break;
 			}
 
-			/* Need at least 12 bytes for a data frame: 10 wrapper + 2 length */
-			if (dwRxTempBuffLength < 12) break;
+			if (dwRxTempBuffLength < 3) break;
 
-			if (headch == 0) {
-				/* White line */
-				dwRxTempBuffLength -= 1;
-				pt += 1;
-				wDataLineCnt++;
-				nHeadOnly++;
-				continue;
-			}
-			if (headch != 0x42 && headch != 0x40) {
-				/* Unknown header — log a 32-byte dump and stop pre-parsing. */
-				char hex[3*32+1] = {0};
-				DWORD dump_n = dwRxTempBuffLength < 32 ? dwRxTempBuffLength : 32;
-				for (DWORD ii = 0; ii < dump_n; ii++)
-					snprintf(hex + ii*3, 4, "%02x ", (unsigned char)pt[ii]);
-				WriteLog("  brscan4 parser: unexpected header 0x%02x at remain=%lu, bytes: %s", headch, (unsigned long)dwRxTempBuffLength, hex);
-				break;
-			}
+			WORD wrapper_len = (WORD)((unsigned char)pt[1] |
+			                          ((unsigned char)pt[2] << 8));
+			DWORD length_pos = 3 + (DWORD)wrapper_len;
+			if (dwRxTempBuffLength < length_pos + 2) break;
 
-			/* Skip 10-byte wrapper, read 2-byte LE length */
-			WORD clen = (unsigned char)pt[10] | ((unsigned char)pt[11] << 8);
-			DWORD lineTotal = 12 + (DWORD)clen;
-
-			if (dwRxTempBuffLength < lineTotal) break;
-
-			if (wDataLineCnt < 3) {
-				WriteLog("  brscan4 line[%d]: clen=%u total=%lu next=%02x %02x %02x",
-					wDataLineCnt, clen, (unsigned long)lineTotal,
-					(unsigned char)pt[lineTotal],
-					(unsigned char)pt[lineTotal+1],
-					(unsigned char)pt[lineTotal+2]);
-			}
+			WORD data_len = (WORD)((unsigned char)pt[length_pos] |
+			                       ((unsigned char)pt[length_pos + 1] << 8));
+			DWORD lineTotal = length_pos + 2 + (DWORD)data_len;
+			if (lineTotal < 5 || dwRxTempBuffLength < lineTotal) break;
 
 			nLength = lineTotal;
 			dwRxTempBuffLength -= lineTotal;
@@ -2392,12 +2361,12 @@ ProcessMain(Brother_Scanner *this, WORD wByte, WORD wDataLineCnt, char * lpFwBuf
 		//
 		Header = *lpScn++;
 		//06/02/28
-		if((BYTE)Header == 0x84){
+		if((BYTE)Header == 0x84 && this->modelInf.seriesNo < MUST_CONVERT_MODEL){
 		  WriteLog( "Header = 84" );
 		  wLineCnt += 2;
 		  answer = SCAN_DUPLEX_NORMAL;
 		}
-		else if( (BYTE)Header == 0x85){
+		else if( (BYTE)Header == 0x85 && this->modelInf.seriesNo < MUST_CONVERT_MODEL){
 		  WriteLog( "Header = 85" );
 		  wLineCnt += 2;
 		  answer = SCAN_DUPLEX_REVERSE;
@@ -2414,40 +2383,23 @@ ProcessMain(Brother_Scanner *this, WORD wByte, WORD wDataLineCnt, char * lpFwBuf
 			//
 			//	Scanned Data
 			//
-			if( Header == 0 ){
-				//
-				//	White line
-				//
-				WriteLog( "Header=%2x  while line", (BYTE)Header );
-				WriteLog( "\tlpFwBufp = %X, lpScn = %X", lpFwBuf, lpScn );
-
-				if( lpFwBuf ){
-					lRealY++;
-					lpFwBuf += this->scanInfo.ScanAreaByte.lWidth;
-				}
 #if BRSANESUFFIX == 2
-			}else if( (Header == 0x42 || Header == 0x40) && this->modelInf.seriesNo >= MUST_CONVERT_MODEL ){
-				/*
-				 * brscan4 line format: [HH 07 00 XX XX XX XX XX XX XX][NN NN][data]
-				 *   HH = 0x42 (mono packbits) or 0x40 (mono uncompressed, SC_FULNOCM).
-				 * Header byte already consumed. lpScn points to byte 1 (0x07).
-				 * Skip remaining 9 wrapper bytes, read 2-byte LE length.
-				 */
-				lpScn += 9;  /* skip to length field (bytes 10-11 of original frame) */
-				count = (WORD)((unsigned char)lpScn[0] | ((unsigned char)lpScn[1] << 8)); /* 2-byte LE length */
+			if( this->modelInf.seriesNo >= MUST_CONVERT_MODEL ){
+				WORD wrapper_len = (WORD)((unsigned char)lpScn[0] | ((unsigned char)lpScn[1] << 8));
+				LPSTR lpFrame = lpScn - 1;
+				lpScn += 2 + wrapper_len;
+				count = (WORD)((unsigned char)lpScn[0] | ((unsigned char)lpScn[1] << 8));
 				lpScn += 2;
 				lpSrc = lpScn;
 				Dcount = count;
 
-				WriteLog( "Header=%02x(brscan4) Count=%4d", Header, count );
+				WriteLog( "Header=%02x(brscan4) wrapper=%u Count=%4d", Header, wrapper_len, count );
 
 				if( lpFwBuf ){
-					SetupImgLineProc( Header );  /* 0x42=MONO PACKBITS, 0x40=MONO NONCOMP */
+					SetupImgLineProc( Header );
 					ImgLineProcInfo.pLineData      = lpSrc;
 					ImgLineProcInfo.dwLineDataSize = count;
 					ImgLineProcInfo.pWriteBuff     = lpFwBuf;
-					/* Clear output line to white before decompression,
-					 * so any unfilled pixels are white, not stale data */
 					memset(lpFwBuf, 0xFF, this->scanInfo.ScanAreaByte.lWidth);
 
 					dwWriteImageSize = this->scanDec.lpfnScanDecWrite( &ImgLineProcInfo, &nWriteLineCount );
@@ -2460,7 +2412,19 @@ ProcessMain(Brother_Scanner *this, WORD wByte, WORD wDataLineCnt, char * lpFwBuf
 					}
 				}
 				lpScn += Dcount;
+			}else
 #endif
+			if( Header == 0 ){
+				//
+				//	White line
+				//
+				WriteLog( "Header=%2x  while line", (BYTE)Header );
+				WriteLog( "\tlpFwBufp = %X, lpScn = %X", lpFwBuf, lpScn );
+
+				if( lpFwBuf ){
+					lRealY++;
+					lpFwBuf += this->scanInfo.ScanAreaByte.lWidth;
+				}
 			}else{
 				//
 				//	Scanner data (standard format)

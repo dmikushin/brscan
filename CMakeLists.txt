@@ -28,6 +28,7 @@ set_target_properties(brcolm PROPERTIES SOVERSION 1)
 add_library(sane-brother SHARED
 	libsane-brother/brother.c
 	libsane-brother/brother_advini.c
+	libsane-brother/brother_brscan4.c
 	libsane-brother/brother_bugchk.c
 	libsane-brother/brother_cmatch.c
 	libsane-brother/brother_color.c
@@ -93,4 +94,20 @@ install(FILES data/brsanenetdevice.cfg data/Brsane.ini DESTINATION /usr/share/sa
 install(CODE "
   execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink Brsane.ini \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/share/sane/brother/Brsane2.ini)
 ")
+
+option(BRSCAN_BUILD_TESTS "Build brscan unit tests" ON)
+if(BRSCAN_BUILD_TESTS)
+  enable_testing()
+  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+  set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+  add_subdirectory(ThirdParty/googletest)
+
+  add_executable(test_brscan4_reference
+    tests/unit/test_brscan4_reference.cpp
+    libsane-brother/brother_brscan4.c)
+  target_include_directories(test_brscan4_reference PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/libsane-brother)
+  target_link_libraries(test_brscan4_reference gtest_main)
+  add_test(NAME brscan4_reference COMMAND test_brscan4_reference)
+endif()
 
