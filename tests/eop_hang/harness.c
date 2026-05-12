@@ -274,6 +274,7 @@ int main(int argc, char **argv)
     SANE_Byte buf[32 * 1024];
     uint64_t total = 0;
     uint64_t prev_total = 0;
+    int collect_rgb_stats = getenv("BRSCAN_DEBUG_COLOR") || getenv("BRSCAN_ASSERT_NOT_YELLOW");
     uint64_t rgb_sum[3] = {0, 0, 0};
     uint64_t rgb_pixels = 0;
     unsigned char rgb_min[3] = {255, 255, 255};
@@ -332,7 +333,7 @@ int main(int argc, char **argv)
         }
 
         if (got > 0) {
-            if (p.format == SANE_FRAME_RGB && p.depth == 8) {
+            if (collect_rgb_stats && p.format == SANE_FRAME_RGB && p.depth == 8) {
                 for (SANE_Int i = 0; i + 2 < got; i += 3) {
                     for (int c = 0; c < 3; c++) {
                         unsigned char v = buf[i + c];
