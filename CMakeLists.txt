@@ -90,6 +90,7 @@ install(FILES libbrcolm/GrayCmData/BHMFB/brmfgray.bin DESTINATION /usr/share/san
 install(FILES libbrcolm/GrayCmData/ZLeFB/brlutcm.dat libbrcolm/GrayCmData/ZLeFB/brmfgray.bin DESTINATION /usr/share/sane/brother/GrayCmData/ZLeFB)
 
 install(FILES data/brsanenetdevice.cfg data/Brsane.ini DESTINATION /usr/share/sane/brother)
+install(DIRECTORY data/models2/ DESTINATION /usr/share/sane/brother/models2)
 # BRSANESUFFIX=2 looks for Brsane2.ini
 install(CODE "
   execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink Brsane.ini \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/share/sane/brother/Brsane2.ini)
