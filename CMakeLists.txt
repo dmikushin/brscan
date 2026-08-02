@@ -72,6 +72,8 @@ target_include_directories(brsaneconfig PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/libsane-brother)
 target_compile_definitions(brsaneconfig PRIVATE BRSANESUFFIX=2)
 target_link_libraries(brsaneconfig sane-brother)
+set_target_properties(brsaneconfig PROPERTIES
+        INSTALL_RPATH "$ORIGIN/../lib/sane")
 
 install(TARGETS brsaneconfig brscandec brcolm)
 install(TARGETS sane-brother LIBRARY DESTINATION /usr/lib/sane)
