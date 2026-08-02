@@ -62,8 +62,9 @@ set_target_properties(sane-brother PROPERTIES SOVERSION 1)
 
 # BRSANESUFFIX=2 code loads libbrscandec2.so and libbrcolm2.so by name
 install(CODE "
-  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink libbrscandec.so \${CMAKE_INSTALL_PREFIX}/lib/libbrscandec2.so)
-  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink libbrcolm.so \${CMAKE_INSTALL_PREFIX}/lib/libbrcolm2.so)
+  execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib)
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink libbrscandec.so \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib/libbrscandec2.so)
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink libbrcolm.so \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib/libbrcolm2.so)
 ")
 
 add_executable(brsaneconfig
