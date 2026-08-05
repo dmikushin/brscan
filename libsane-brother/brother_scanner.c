@@ -1005,7 +1005,7 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 			WriteLog( "PageScan ReadNonFixedData Cnt = %d", nReadCnt );
 
 #if BRSANESUFFIX == 2
-			if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL)
+			if (model_uses_brscan4(&this->modelInf))
 				rc = brscan4_read_next_record_from_device( this, lpReadBuf, nReadSize );
 			else
 #endif
@@ -1032,7 +1032,7 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 				 * status bytes. For brscan4 models, the data format is
 				 * different and StatusChk would false-positive on
 				 * compressed data bytes >= 0x80. Skip it. */
-				if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL) {
+				if (model_uses_brscan4(&this->modelInf)) {
 					sc = 0;
 					if (brscan4_status_at_frame_boundary((unsigned char *)lpRxBuff,
 					                                    wData)) {
@@ -1085,7 +1085,7 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 	dwRxTempBuffLength = wData;
 
 #if BRSANESUFFIX == 2
-	if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL) {
+	if (model_uses_brscan4(&this->modelInf)) {
 		for (wDataLineCnt=0; wDataLineCnt < nFwTempBuffMaxLine;) {
 			if (dwRxTempBuffLength == 0) break;
 
@@ -1174,7 +1174,7 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 		return FALSE;
 #endif
 
-	if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL &&
+	if (model_uses_brscan4(&this->modelInf) &&
 	    (this->devScanInfo.wColorType == COLOR_FUL ||
 	     this->devScanInfo.wColorType == COLOR_FUL_NOCM))
 		nAnswer = brscan4_process_color_direct(this, wData, &wProcessSize);
@@ -1604,7 +1604,7 @@ PageScan( Brother_Scanner *this, char *lpFwBuf, int nMaxLen, int *lpFwLen )
 		return FALSE;
 #endif
 
-	if (this->modelInf.seriesNo >= MUST_CONVERT_MODEL &&
+	if (model_uses_brscan4(&this->modelInf) &&
 	    (this->devScanInfo.wColorType == COLOR_FUL ||
 	     this->devScanInfo.wColorType == COLOR_FUL_NOCM))
 		nAnswer = brscan4_process_color_direct(this, wData, &wProcessSize);
@@ -2331,12 +2331,12 @@ ProcessMain(Brother_Scanner *this, WORD wByte, WORD wDataLineCnt, char * lpFwBuf
 		//
 		Header = *lpScn++;
 		//06/02/28
-		if((BYTE)Header == 0x84 && this->modelInf.seriesNo < MUST_CONVERT_MODEL){
+		if((BYTE)Header == 0x84 && !model_uses_brscan4(&this->modelInf)){
 		  WriteLog( "Header = 84" );
 		  wLineCnt += 2;
 		  answer = SCAN_DUPLEX_NORMAL;
 		}
-		else if( (BYTE)Header == 0x85 && this->modelInf.seriesNo < MUST_CONVERT_MODEL){
+		else if( (BYTE)Header == 0x85 && !model_uses_brscan4(&this->modelInf)){
 		  WriteLog( "Header = 85" );
 		  wLineCnt += 2;
 		  answer = SCAN_DUPLEX_REVERSE;
@@ -2354,7 +2354,7 @@ ProcessMain(Brother_Scanner *this, WORD wByte, WORD wDataLineCnt, char * lpFwBuf
 			//	Scanned Data
 			//
 #if BRSANESUFFIX == 2
-			if( this->modelInf.seriesNo >= MUST_CONVERT_MODEL ){
+			if( model_uses_brscan4(&this->modelInf) ){
 				WORD wrapper_len = (WORD)((unsigned char)lpScn[0] | ((unsigned char)lpScn[1] << 8));
 				lpScn += 2 + wrapper_len;
 				count = (WORD)((unsigned char)lpScn[0] | ((unsigned char)lpScn[1] << 8));
