@@ -33,7 +33,7 @@
 #define  WriteLog if(0)printf
 #endif  //DEBUGMAIN
 
-sane_model_info ERRORINFO={"","",-1,-1,-1,-1,-1,-1,-1,"","","",NULL};
+sane_model_info ERRORINFO={"","",-1,-1,-1,-1,-1,-1,-1,SCAN_PROTOCOL_COMPAT,"","","",NULL};
 
 sane_model_info *root_adv_model = NULL;
 
