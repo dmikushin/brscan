@@ -93,7 +93,8 @@ install(FILES libbrcolm/GrayCmData/ZLeFB/brlutcm.dat libbrcolm/GrayCmData/ZLeFB/
 install(FILES data/brsanenetdevice.cfg data/Brsane.ini DESTINATION /usr/share/sane/brother)
 # BRSANESUFFIX=2 looks for Brsane2.ini
 install(CODE "
-  execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink Brsane.ini \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/share/sane/brother/Brsane2.ini)
+  execute_process(COMMAND \${CMAKE_COMMAND} -E make_directory \$ENV{DESTDIR}/usr/share/sane/brother)
+  execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink Brsane.ini \$ENV{DESTDIR}/usr/share/sane/brother/Brsane2.ini)
 ")
 
 option(BRSCAN_BUILD_TESTS "Build brscan unit tests" OFF)
