@@ -194,6 +194,14 @@ int init_model_info(void)
 	    readInfoPoint += recordLength+1;	 /* Move recoed ponter */
 	    recordPoint = modelRecord;		 /* Set to pointer that indicated to array */
 	    model->scanProtocol = SCAN_PROTOCOL_COMPAT;
+	    {
+		char *protocolMarker = strstr(modelRecord, ",protocol=");
+		if (protocolMarker != NULL) {
+			*protocolMarker = NULL_C;
+			model->scanProtocol = scan_protocol_from_token(
+				protocolMarker + strlen(",protocol="));
+		}
+	    }
 	    res = GetDecInfo(recordPoint,&(model->expcaps));	 /* M-LNX-20 get advanced capability flags */
 	    recordPoint += NextPoint(recordPoint);			 /* M-LNX-20 Move pointer that indicated array */
 	    res = GetHexInfo(recordPoint,&(model->vendorID));	 /* get product ID */
@@ -429,6 +437,7 @@ int get_model_info(PMODELINF modelInfList)
 		modelInfList->index = modelListStart->index;
 		modelInfList->productID = modelListStart->productID;		/* Pass product ID */
 		modelInfList->seriesNo = modelListStart->seriesNo;		/* Pass serial ID */
+		modelInfList->scanProtocol = modelListStart->scanProtocol;
 		res = TRUE;
 	}
 	return res;

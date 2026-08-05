@@ -232,9 +232,13 @@ typedef struct model_inf * PMODELINF;
 
 static int model_uses_brscan4(PMODELINF model) {
 #if BRSANESUFFIX == 2
-	return model->scanProtocol == SCAN_PROTOCOL_BRSCAN4 ||
-		(model->scanProtocol == SCAN_PROTOCOL_COMPAT &&
-		 model->seriesNo >= MUST_CONVERT_MODEL);
+	/* An explicit protocol annotation is authoritative. Keep the series
+	 * fallback only for legacy model records that predate protocol metadata. */
+	if (model->scanProtocol == SCAN_PROTOCOL_LEGACY)
+		return FALSE;
+	if (model->scanProtocol == SCAN_PROTOCOL_BRSCAN4)
+		return TRUE;
+	return model->seriesNo >= MUST_CONVERT_MODEL;
 #else
 	return FALSE;
 #endif

@@ -93,11 +93,12 @@ int parse_and_add_model_info(char *line){
   static int  def_int = 0xffff;
   static char def_str[2] ="";
   char *protocol_marker;
+  char *protocol_token = NULL;
   reform_line(line);
   protocol_marker = strstr(line, ",protocol=");
   if (protocol_marker != NULL) {
+    protocol_token = protocol_marker + strlen(",protocol=");
     *protocol_marker = 0;
-    protocol_marker += strlen(",protocol=");
   }
   current_t = (sane_model_info *)calloc(sizeof(sane_model_info),1);
 
@@ -112,7 +113,7 @@ int parse_and_add_model_info(char *line){
   }
   current_t->r_endpoint = -1;
   current_t->w_endpoint = -1;
-  current_t->scan_protocol = scan_protocol_from_token(protocol_marker);
+  current_t->scan_protocol = scan_protocol_from_token(protocol_token);
 
   //  sscanf(line,"0x%x,0x%x,%d,%d,%s,%d,%d",
   //	 &current_t->vid,
