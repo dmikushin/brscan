@@ -2279,6 +2279,19 @@ GetDeviceScanArea( Brother_Scanner *this, LPAREARECT lpScanAreaDot )
 	lpScanAreaDot->left  = ( lpScanAreaDot->left  + 0x8 ) & 0xFFF0;
 	lpScanAreaDot->right = ( lpScanAreaDot->right + 0x8 ) & 0xFFF0;
 
+	/*
+	 * Brother DCP-7055 (USB 04f9:0248):
+	 * brscan4 exposes the requested scan width rounded down to a
+	 * 32-pixel boundary.  Use the raw width calculated before the
+	 * generic 16-pixel coordinate rounding.
+	 */
+	if ( this->modelInf.productID == 0x0248 ){
+		if ( lTempWidth >= 32 ){
+			lpScanAreaDot->right =
+				lpScanAreaDot->left + ( lTempWidth & ~31L );
+		}
+	}
+
 }
 
 

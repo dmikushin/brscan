@@ -7,7 +7,7 @@ extern "C" {
 
 #define BRSCAN4_READ_CACHE_SIZE 0x20400
 #define BRSCAN4_MAX_REQUEST_SIZE 0x20200
-#define BRSCAN4_MAX_USB_READ_SIZE 0x7FFF
+#define BRSCAN4_MAX_USB_READ_SIZE 0x7E00
 
 typedef int (*brscan4_read_fn)(void *ctx, unsigned char *dst, int size);
 
