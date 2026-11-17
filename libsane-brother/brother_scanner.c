@@ -1865,7 +1865,7 @@ ReadTrash( Brother_Scanner *this )
 
 		// discard the data
 		if (IFTYPE_NET != this->hScanner->device){
-		  nResultSize = usb_bulk_read(this->hScanner->usb,
+		  nResultSize = brscan_usb_bulk_read(this->hScanner->usb,
 					      nEndPoint,
 					      lpBrBuff,
 					      32000,
@@ -1989,7 +1989,11 @@ ScanEnd( Brother_Scanner *this )
     //
     // end of the decode/stretch process
     //
-    this->scanDec.lpfnScanDecClose();
+    // sane_open publishes the handle before LoadScanDecDll runs, so after
+    // a failed open (scanimage still calls sane_close) the decoder was
+    // never loaded and this pointer is NULL.
+    if (this->scanDec.lpfnScanDecClose)
+        this->scanDec.lpfnScanDecClose();
 
     WriteLog( "<<<<< Terminate Scanning <<<<<" );
 }

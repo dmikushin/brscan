@@ -157,12 +157,66 @@ static size_t g_residue_cap = 0;
 static size_t g_residue_len = 0;
 static size_t g_residue_pos = 0;
 
+/*
+ * usb_bulk_read that never asks for a partial packet.
+ *
+ * A bulk-IN request whose length is not a multiple of the endpoint's
+ * wMaxPacketSize lets the device send a full packet into a buffer that has
+ * room for only part of it. libusb-0.1 splits a read into 16 KiB URBs, so a
+ * 32767-byte request ends in a 16383-byte URB: at USB full speed (64-byte
+ * packets) the 256th packet overruns it, the host controller reports a data
+ * overrun, the read returns 32704 bytes and the overrunning packet is gone.
+ * The brscan4 record stream is then misaligned and the next "header" is a
+ * payload byte (seen as 0xFD/0xFE/0xF4 -> "Service Error", sane_read I/O
+ * error after ~16 lines). The same arithmetic gives 32256 at high speed
+ * (512-byte packets), where no corruption was observed. Rounding the
+ * request down to whole packets leaves the rest of the data on the device
+ * for the next read. Requests smaller
+ * than one packet (the 272-byte query replies) are passed through unchanged:
+ * the device answers them with a single short packet. The 32000-byte drain
+ * reads in OpenDevice recovery and ReadTrash go through here as well.
+ */
+static int bulk_in_max_packet(void *dev, int ep)
+{
+    struct usb_device *udev = usb_device(dev);
+    int c, i, a, e;
+
+    ep |= USB_ENDPOINT_IN;     /* usb_bulk_read does the same */
+    if (!udev || !udev->config)
+        return 0;
+    for (c = 0; c < udev->descriptor.bNumConfigurations; c++) {
+        struct usb_config_descriptor *cfg = &udev->config[c];
+        for (i = 0; cfg->interface && i < cfg->bNumInterfaces; i++) {
+            struct usb_interface *itf = &cfg->interface[i];
+            for (a = 0; itf->altsetting && a < itf->num_altsetting; a++) {
+                struct usb_interface_descriptor *alt = &itf->altsetting[a];
+                for (e = 0; alt->endpoint && e < alt->bNumEndpoints; e++) {
+                    if (alt->endpoint[e].bEndpointAddress == ep)
+                        return alt->endpoint[e].wMaxPacketSize & 0x7FF;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+int brscan_usb_bulk_read(void *dev, int ep, char *buf, int size, int timeout)
+{
+    int mps = bulk_in_max_packet(dev, ep);
+
+    if (mps <= 0)
+        WriteLog( "brscan_usb_bulk_read: no wMaxPacketSize for ep 0x%02x, read of %d not packet-aligned", ep, size );
+    else if (size >= mps)
+        size -= size % mps;
+    return usb_bulk_read(dev, ep, buf, size, timeout);
+}
+
 static int brscan_io_replay_or_usb_bulk_read(void *dev, int ep,
                                              char *buf, int size, int timeout)
 {
     brscan_io_init();
     if (!brscan_io_replay_fp) {
-        return usb_bulk_read(dev, ep, buf, size, timeout);
+        return brscan_usb_bulk_read(dev, ep, buf, size, timeout);
     }
 
     /* Drain leftover from a previous oversized record first. */
@@ -449,7 +503,7 @@ OpenDevice(usb_dev_handle *hScanner, int seriesNo)
 
 		}
 		else{
-		  nResultSize = usb_bulk_read(hScanner->usb,
+		  nResultSize = brscan_usb_bulk_read(hScanner->usb,
 						  nEndPoint,
 						  lpBrBuff,
 						  32000,

@@ -82,6 +82,9 @@ int     ReadDeviceData( usb_dev_handle *hScanner, LPSTR lpRxBuffer, int nReadSiz
 int     ReadNonFixedData( usb_dev_handle *hScanner, LPSTR lpBuffer, WORD wReadSize, DWORD dwTimeOut, int seriesNo );
 BOOL    ReadFixedData( usb_dev_handle *hScanner, LPSTR lpBuffer, WORD wReadSize, DWORD dwTimeOut, int seriesNo );
 int     ReadDeviceCommand( usb_dev_handle *hScanner, LPSTR lpRxBuffer, int nReadSize, int seriesNo );
+/* usb_bulk_read rounded down to whole wMaxPacketSize packets; `dev` is the
+ * real libusb handle (hScanner->usb). */
+int     brscan_usb_bulk_read( void *dev, int ep, char *buf, int size, int timeout );
 int     WriteDeviceData( usb_dev_handle *hScanner, LPSTR lpTxBuffer, int nWriteSize, int seriesNo );
 int     WriteDeviceCommand( usb_dev_handle *hScanner, LPSTR lpTxBuffer, int nWriteSize, int seriesNo );
 HANDLE  AllocReceiveBuffer( DWORD  dwBuffSize );

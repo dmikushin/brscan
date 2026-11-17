@@ -98,6 +98,9 @@ usb_dev_handle *usb_open(struct usb_device *dev)
     return (usb_dev_handle *)&g_fake_handle;
 }
 int usb_close(usb_dev_handle *dev)               { trace("usb_close"); (void)dev; return 0; }
+/* The fake device has no config descriptors, so brscan's packet-size lookup
+ * finds nothing and reads go through unrounded. */
+struct usb_device *usb_device(usb_dev_handle *dev){ trace("usb_device"); (void)dev; return &g_fake_dev; }
 int usb_set_configuration(usb_dev_handle *dev,int c){ trace("usb_set_configuration(c=%d)", c); (void)dev; return 0; }
 int usb_claim_interface(usb_dev_handle *dev,int i)  { trace("usb_claim_interface(i=%d)", i); (void)dev; return 0; }
 int usb_release_interface(usb_dev_handle *dev,int i){ trace("usb_release_interface(i=%d)", i); (void)dev; return 0; }
