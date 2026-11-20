@@ -62,8 +62,9 @@ set_target_properties(sane-brother PROPERTIES SOVERSION 1)
 
 # BRSANESUFFIX=2 code loads libbrscandec2.so and libbrcolm2.so by name
 install(CODE "
-  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink libbrscandec.so \${CMAKE_INSTALL_PREFIX}/lib/libbrscandec2.so)
-  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink libbrcolm.so \${CMAKE_INSTALL_PREFIX}/lib/libbrcolm2.so)
+  execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib)
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink libbrscandec.so \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib/libbrscandec2.so)
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink libbrcolm.so \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/lib/libbrcolm2.so)
 ")
 
 add_executable(brsaneconfig
@@ -92,7 +93,8 @@ install(FILES libbrcolm/GrayCmData/ZLeFB/brlutcm.dat libbrcolm/GrayCmData/ZLeFB/
 install(FILES data/brsanenetdevice.cfg data/Brsane.ini DESTINATION /usr/share/sane/brother)
 # BRSANESUFFIX=2 looks for Brsane2.ini
 install(CODE "
-  execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink Brsane.ini \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/share/sane/brother/Brsane2.ini)
+  execute_process(COMMAND \${CMAKE_COMMAND} -E make_directory \$ENV{DESTDIR}/usr/share/sane/brother)
+  execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink Brsane.ini \$ENV{DESTDIR}/usr/share/sane/brother/Brsane2.ini)
 ")
 
 option(BRSCAN_BUILD_TESTS "Build brscan unit tests" OFF)
