@@ -90,6 +90,7 @@ install(FILES libbrcolm/GrayCmData/BHMFB/brmfgray.bin DESTINATION /usr/share/san
 install(FILES libbrcolm/GrayCmData/ZLeFB/brlutcm.dat libbrcolm/GrayCmData/ZLeFB/brmfgray.bin DESTINATION /usr/share/sane/brother/GrayCmData/ZLeFB)
 
 install(FILES data/brsanenetdevice.cfg data/Brsane.ini DESTINATION /usr/share/sane/brother)
+install(DIRECTORY data/models2/ DESTINATION /usr/share/sane/brother/models2)
 # BRSANESUFFIX=2 looks for Brsane2.ini
 install(CODE "
   execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink Brsane.ini \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/share/sane/brother/Brsane2.ini)
@@ -119,5 +120,11 @@ if(BRSCAN_BUILD_TESTS)
     BRSCAN_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   target_link_libraries(test_brscan4_color_reference gtest_main)
   add_test(NAME brscan4_color_reference COMMAND test_brscan4_color_reference)
-endif()
 
+  add_executable(test_scan_protocol tests/unit/test_scan_protocol.cpp)
+  target_compile_definitions(test_scan_protocol PRIVATE BRSANESUFFIX=2)
+  target_include_directories(test_scan_protocol PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/libsane-brother)
+  target_link_libraries(test_scan_protocol gtest_main)
+  add_test(NAME scan_protocol COMMAND test_scan_protocol)
+endif()

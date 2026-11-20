@@ -25,6 +25,8 @@
 
 #define NAMELEN  64
 
+#include "brother_scan_protocol.h"
+
 typedef struct _sane_model_info  {
   char                       model_name[NAMELEN];
   char                       friendly_name[NAMELEN];
@@ -35,6 +37,7 @@ typedef struct _sane_model_info  {
   int                        model_type;
   int                        r_endpoint;
   int                        w_endpoint;
+  int                        scan_protocol;
   char                       colmatchDL[NAMELEN];
   char                       colmatchTBL[NAMELEN];  //M-LNX-20
   char                       graylevelTBL[NAMELEN]; //M-LNX-20

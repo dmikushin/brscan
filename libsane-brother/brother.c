@@ -360,6 +360,7 @@ RegisterSaneDev (struct usb_device *pdevUSB,
   q->modelInf.index = pModelInf->index;
   q->modelInf.productID = pModelInf->productID;
   q->modelInf.seriesNo = pModelInf->seriesNo;
+  q->modelInf.scanProtocol = pModelInf->scanProtocol;
   q->pdev=pdevUSB;
   q->index = index;
   ++num_devices;
@@ -614,6 +615,7 @@ sane_open (SANE_String_Const devicename, SANE_Handle *handle)
     this->modelInf.index = pdev->modelInf.index;
 
     this->modelInf.seriesNo = pdev->modelInf.seriesNo;
+    this->modelInf.scanProtocol = pdev->modelInf.scanProtocol;
 #if BRSANESUFFIX == 1
     // Workaround for DCP1510 on BRSANESUFFIX==1
     if (this->modelInf.seriesNo == 14)

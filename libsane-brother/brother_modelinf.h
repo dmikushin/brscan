@@ -33,6 +33,7 @@
 #define _H_BROTHER_MODELINF
 
 #include "brother_dtype.h"
+#include "brother_scan_protocol.h"
 
 /*======================*/
 /* fundamental constant	*/
@@ -222,11 +223,26 @@ struct model_inf{
       int vendorID;		/* Vendor ID */
       int productID;		/* Product ID */
       int seriesNo;		/* series Number */
+      int scanProtocol;	/* scan data wire protocol */
       char *modelName;		/* Model name */
       char *modelTypeName;	/* Model type */
 };
 typedef struct model_inf MODELINF;
 typedef struct model_inf * PMODELINF;
+
+static int model_uses_brscan4(PMODELINF model) {
+#if BRSANESUFFIX == 2
+	/* An explicit protocol annotation is authoritative. Keep the series
+	 * fallback only for legacy model records that predate protocol metadata. */
+	if (model->scanProtocol == SCAN_PROTOCOL_LEGACY)
+		return FALSE;
+	if (model->scanProtocol == SCAN_PROTOCOL_BRSCAN4)
+		return TRUE;
+	return model->seriesNo >= MUST_CONVERT_MODEL;
+#else
+	return FALSE;
+#endif
+}
 
 /*** supported resolution ***/
 typedef union tagRESOLIST {

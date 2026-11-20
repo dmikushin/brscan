@@ -23,7 +23,6 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <dirent.h>
-#include <curses.h>
 #include <unistd.h>
 
 #include "brother_advini.h"
@@ -34,7 +33,7 @@
 #define  WriteLog if(0)printf
 #endif  //DEBUGMAIN
 
-sane_model_info ERRORINFO={"","",-1,-1,-1,-1,-1,-1,-1,"","","",NULL};
+sane_model_info ERRORINFO={"","",-1,-1,-1,-1,-1,-1,-1,SCAN_PROTOCOL_COMPAT,"","","",NULL};
 
 sane_model_info *root_adv_model = NULL;
 
@@ -93,7 +92,14 @@ int parse_and_add_model_info(char *line){
   static int  def_vid = 0x4f9;
   static int  def_int = 0xffff;
   static char def_str[2] ="";
+  char *protocol_marker;
+  char *protocol_token = NULL;
   reform_line(line);
+  protocol_marker = strstr(line, ",protocol=");
+  if (protocol_marker != NULL) {
+    protocol_token = protocol_marker + strlen(",protocol=");
+    *protocol_marker = 0;
+  }
   current_t = (sane_model_info *)calloc(sizeof(sane_model_info),1);
 
   if (current_t == NULL )return -1;
@@ -107,6 +113,7 @@ int parse_and_add_model_info(char *line){
   }
   current_t->r_endpoint = -1;
   current_t->w_endpoint = -1;
+  current_t->scan_protocol = scan_protocol_from_token(protocol_token);
 
   //  sscanf(line,"0x%x,0x%x,%d,%d,%s,%d,%d",
   //	 &current_t->vid,
@@ -476,7 +483,7 @@ int ReadModelInfoSub(char *buff,int bufsize,int *psize){
   current = root_adv_model;
   while(current){
     record ++;
-    sprintf(line,"%d,0x%x,0x%x,%d,%d,%s",
+    sprintf(line,"%d,0x%x,0x%x,%d,%d,%s%s%s",
 // M-LNX-20
 	    current->expanded_func_type,
 // M-LNX-20
@@ -484,7 +491,9 @@ int ReadModelInfoSub(char *buff,int bufsize,int *psize){
 	    current->pid,
 	    current->func_type,
 	    current->model_type,
-	    current->model_name
+	    current->model_name,
+	    current->scan_protocol == SCAN_PROTOCOL_COMPAT ? "" : ",protocol=",
+	    scan_protocol_token(current->scan_protocol)
 	    );
     //    len = strlen(line) + sizeof('\0');
     len = strlen(line) + 1;
